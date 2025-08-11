@@ -9,8 +9,8 @@ library(sf)
 library(bslib)
 library(ggplot2)
 
-regions <- sf::st_read("bcr.gdb")
-regions <- sf::st_transform(regions, 4326)
+regions <- readRDS("data/processed/regions_sf.rds")
+
 
 data <- data.frame(
   y = c(6, 7, 7, 9, 12, 13, 13, 15, 16, 19, 22, 23, 23, 25, 26),
