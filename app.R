@@ -11,6 +11,7 @@ library(ggplot2)
 
 regions <- readRDS("data/processed/regions_sf.rds")
 
+source('R/plot_loader.R')
 
 data <- data.frame(
   y = c(6, 7, 7, 9, 12, 13, 13, 15, 16, 19, 22, 23, 23, 25, 26),
@@ -52,10 +53,7 @@ server <- function(input, output) {
       addTiles()
   })
   output$plot <- renderPlot({
-    ggplot(data = data, aes(x, y)) +
-      geom_point() +
-      geom_smooth(method = 'lm') +
-      theme(aspect.ratio = 1)
+    get_plot(1)
   })
   
 }
