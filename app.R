@@ -13,13 +13,16 @@ library(dplyr)
 regions <- readRDS("data/processed/regions_sf.rds")
 
 # Load data objects
-plot_data <- readRDS("./tests/plot_data2.rds")
+plot_data <- readRDS("./tests/plot_data_allBCR.rds")
 
 # Define UI for application
 ui <- fluidPage(navset_tab(
   nav_panel("Map", page_sidebar(
     sidebar = sidebar(
       selectInput("select", "Choose species:", c("Polioptila_caerulea", "Chordeiles_minor", "Anas_platyrhynchos", "Columba_livia", "Vireo_gilvus", "Falco_sparverius", "Dryocopus_pileatus", "Hirundo_rustica", "Sturnella_neglecta", "Geothlypis_trichas")),
+      selectInput("region", "Choose region:", c("BCR2", "BCR4", "BCR5", "BCR6", "BCR8", "BCR9", "BCR10", "BCR11", "BCR12", "BCR13", "BCR14", "BCR15",
+                "BCR16", "BCR17", "BCR18", "BCR19", "BCR20", "BCR21", "BCR22", "BCR23", "BCR24",
+                "BCR25", "BCR26", "BCR27", "BCR28", "BCR29", "BCR30", "BCR31", "BCR32", "BCR33", "BCR34", "BCR35", "BCR36", "BCR37")),
       sliderInput(
         "slider",
         "Year",
@@ -41,9 +44,11 @@ server <- function(input, output) {
   # Load data
   plotDataInput <- reactive({
     req(input$select)
+    req(input$select)
     selected_species <- input$select
+    selected_region <- input$region
     d <- plot_data %>%
-      filter(species == selected_species)
+      filter(species == selected_species, region == selected_region)
   })
   output$map <- renderLeaflet({
     leaflet(regions) %>%
