@@ -22,7 +22,7 @@ data <- data.frame(
 ui <- fluidPage(navset_tab(
   nav_panel("Map", page_sidebar(
     sidebar = sidebar(
-      selectInput("select", "Choose species:", list("Hirundo rustica", "2", "3")),
+      selectizeInput("select", "Choose species:", choices = list('Polioptila_caerulea', 'Chordeiles_minor', 'Anas_platyrhynchos', 'Columba_livia', 'Vireo_gilvus', 'Falco_sparverius', 'Dryocopus_pileatus', 'Hirundo_rustica', 'Sturnella_neglecta', 'Geothlypis_trichas')),
       sliderInput(
         "slider",
         "Year",
