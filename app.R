@@ -10,7 +10,7 @@ library(bslib)
 library(ggplot2)
 library(dplyr)
 
-regions <- readRDS("data/processed/regions_sf.rds")
+regions <- readRDS("data/processed/bcr_clean.rds")
 
 # Load data objects
 plot_data <- readRDS("./tests/plot_data_allBCR.rds")
