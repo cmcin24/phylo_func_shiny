@@ -34,13 +34,18 @@ ui <- fluidPage(navset_tab(
       plotOutput("plot")
       
     ),
-    leafletOutput("map")
+    leafletOutput("map"),
+    textOutput("click_coords")
   ), ),
   nav_panel("Tree", "Content"),
 ), id = "tab", )
 
 # Define server logic
 server <- function(input, output) {
+  # Initialise reactive values
+  rv_shape <- reactiveVal(FALSE)
+  rv_location <- reactiveValues(id=NULL)
+  
   # Load data
   plotDataInput <- reactive({
     req(input$select)
@@ -50,6 +55,7 @@ server <- function(input, output) {
     d <- plot_data %>%
       filter(species == selected_species, region == selected_region)
   })
+  # Leaflet map output
   output$map <- renderLeaflet({
     leaflet(regions) %>%
       setView(-98, 41, zoom = 4) %>%
@@ -70,6 +76,14 @@ server <- function(input, output) {
   width = 200,
   height = 200
   )
+  output$click_coords <- renderText({
+    paste0("Clicked at: ", rv_location$id)
+  })
+  observeEvent(input$map_click, {
+    click <- input$map_shape_click
+    rv_location$id <- click$id
+    print(click$id)
+  })
 
 
 }
