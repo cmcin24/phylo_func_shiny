@@ -42,10 +42,6 @@ ui <- fluidPage(navset_tab(
 
 # Define server logic
 server <- function(input, output, session) {
-  # Initialise reactive values
-  #rv_shape <- reactiveVal(FALSE)
-  #rv_location <- reactiveValues(id=NULL)
-  
   # Load data
   plotDataInput <- reactive({
     req(input$select)
@@ -69,7 +65,15 @@ server <- function(input, output, session) {
       addTiles()
   })
   output$plot <- renderPlot({
-    ggplot(plotDataInput(), aes(x = year, y = pred)) +
+    data <- plotDataInput()
+    
+    if (nrow(data) == 0) {
+      return(ggplot() + 
+               annotate("text", x = 0.5, y = 0.5, label = "No data available") +
+               theme_void())
+    }
+    
+    ggplot(data, aes(x = year, y = pred)) +
       geom_line(linewidth = 1, alpha = 0.7) +
       geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.3) +
       theme_classic() 
@@ -84,12 +88,8 @@ server <- function(input, output, session) {
       # Update region selector based on map click
       updateSelectInput(session, "region", selected = click$id)
     }
-    print(click$id)
   })
-
-
 }
-
 
 
 # Run the application
