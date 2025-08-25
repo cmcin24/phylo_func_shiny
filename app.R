@@ -41,10 +41,10 @@ ui <- fluidPage(navset_tab(
 ), id = "tab", )
 
 # Define server logic
-server <- function(input, output) {
+server <- function(input, output, session) {
   # Initialise reactive values
-  rv_shape <- reactiveVal(FALSE)
-  rv_location <- reactiveValues(id=NULL)
+  #rv_shape <- reactiveVal(FALSE)
+  #rv_location <- reactiveValues(id=NULL)
   
   # Load data
   plotDataInput <- reactive({
@@ -60,6 +60,7 @@ server <- function(input, output) {
     leaflet(regions) %>%
       setView(-98, 41, zoom = 4) %>%
       addPolygons(
+        layerId = ~BCR_clean,
         color = "grey",
         fillOpacity = 0.5,
         weight = 0.8,
@@ -71,17 +72,18 @@ server <- function(input, output) {
     ggplot(plotDataInput(), aes(x = year, y = pred)) +
       geom_line(linewidth = 1, alpha = 0.7) +
       geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.3) +
-      theme_classic()
+      theme_classic() 
   },
   width = 200,
   height = 200
   )
-  output$click_coords <- renderText({
-    paste0("Clicked at: ", rv_location$id)
-  })
-  observeEvent(input$map_click, {
+
+  observeEvent(input$map_shape_click, {
     click <- input$map_shape_click
-    rv_location$id <- click$id
+    if (!is.null(click$id)){
+      # Update region selector based on map click
+      updateSelectInput(session, "region", selected = click$id)
+    }
     print(click$id)
   })
 
