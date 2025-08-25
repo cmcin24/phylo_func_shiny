@@ -74,8 +74,9 @@ server <- function(input, output, session) {
     }
     
     ggplot(data, aes(x = year, y = pred)) +
-      geom_line(linewidth = 1, alpha = 0.7) +
-      geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.3) +
+      geom_line(linewidth = 1, alpha = 0.8, color = "darkblue") +
+      geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.3, fill = "lightblue") +
+      geom_vline(xintercept = input$slider, color = "red", linetype = "dashed", alpha = 0.7) +
       theme_classic() 
   },
   width = 200,
