@@ -25,6 +25,7 @@ plot_data <- readRDS("./tests/plot_data_allBCR.rds")
 ui <- fluidPage(navset_tab(
   nav_panel("Map", page_sidebar(
     sidebar = sidebar(
+      width = 300,
       selectInput("select", "Choose species:", c("Polioptila_caerulea", "Chordeiles_minor", "Anas_platyrhynchos", "Columba_livia", "Vireo_gilvus", "Falco_sparverius", "Dryocopus_pileatus", "Hirundo_rustica", "Sturnella_neglecta", "Geothlypis_trichas")),
       selectInput("region", "Choose region:", c("BCR2", "BCR4", "BCR5", "BCR6", "BCR8", "BCR9", "BCR10", "BCR11", "BCR12", "BCR13", "BCR14", "BCR15",
                 "BCR16", "BCR17", "BCR18", "BCR19", "BCR20", "BCR21", "BCR22", "BCR23", "BCR24",
@@ -172,8 +173,8 @@ server <- function(input, output, session) {
       theme_classic() +
       theme(plot.title = element_text(size = 10))
   },
-  width = 200,
-  height = 200
+  width = 220,
+  height = 220
   )
 
   observeEvent(input$map_shape_click, {
