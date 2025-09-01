@@ -9,17 +9,20 @@ library(sf)
 library(bslib)
 library(ggplot2)
 library(dplyr)
+library(DT)
 
 # source some functions
 source("./R/functions.R")
+
+# Load data objects
+plot_data <- readRDS("./tests/plot_data_allBCR.rds")
 
 # Calculate trends for all species-region combinations
 trend_data <- calculate_trends(plot_data)
 
 regions <- readRDS("data/processed/bcr_clean.rds")
 
-# Load data objects
-plot_data <- readRDS("./tests/plot_data_allBCR.rds")
+
 
 # Define UI for application
 ui <- fluidPage(navset_tab(
@@ -46,6 +49,25 @@ ui <- fluidPage(navset_tab(
     leafletOutput("map"),
   ), ),
   nav_panel("Tree", "Content"),
+  nav_panel("Species Information", 
+            fluidRow(
+              column(8,
+                     h3("Species Details"),
+                     uiOutput("species_info_detailed")
+              ),
+              column(4,
+                     h3("Quick Reference"),
+                     DTOutput("species_table_compact")
+              )
+            ),
+            hr(),
+            fluidRow(
+              column(12,
+                     h3("All Species Database"),
+                     DTOutput("species_table_full")
+              )
+            )
+  ),
 ), id = "tab", )
 
 # Define server logic
@@ -108,23 +130,24 @@ server <- function(input, output, session) {
     
     # Create color palette
     pal <- colorFactor(
-      palette = c("Increasing" = "#2E8B57", 
-                  "Decreasing" = "#CD5C5C", 
-                  "Stable" = "#808080",
+      palette = c("Decreasing" = "#CD5C5C", 
+                  "Increasing" = "#2E8B57", 
                   "No Data" = "#D3D3D3",
-                  "Not Significant" = "#808080"),
-      domain = c("Increasing", "Decreasing", "Stable", "No Data", "Not Significant"),
+                  "Not Significant" = "#808080",
+                  "Stable" = "#808080"),
+      domain = c("Decreasing", "Increasing", "No Data", "Not Significant", "Stable"),
       na.color = "#D3D3D3"
     )
     
     # Create popup content
     popup_content <- paste0(
       "<strong>Region:</strong> ", data$BCR_clean, "<br>",
-      "<strong>Species:</strong> ", gsub("_", " ", input$trend_species), "<br>",
+      "<strong>Species:</strong> ", gsub("_", " ", input$select), "<br>",
       "<strong>Trend:</strong> ", ifelse(is.na(data$trend_category), "No Data", data$trend_category), "<br>",
       "<strong>Slope:</strong> ", round(data$slope, 4), "<br>",
-      "<strong>P-value:</strong> ", round(data$p_value, 4), "<br>",
-      "<strong>R²:</strong> ", round(data$r_squared, 3)
+      "<strong>P-value:</strong> ", round(data$p_value, 4)
+      #, "<br>",
+      #"<strong>R²:</strong> ", round(data$r_squared, 3)
     )
     
     # Update polygons using leafletProxy
@@ -138,6 +161,7 @@ server <- function(input, output, session) {
         opacity = 1,
         fillOpacity = 0.8,
         popup = popup_content,
+        label = ~BCR_clean,
         highlightOptions = highlightOptions(
           weight = 3,
           color = "black",
