@@ -21,7 +21,8 @@ plot_data <- readRDS("./tests/plot_data_allBCR.rds")
 # Calculate trends for all species-region combinations
 trend_data <- calculate_trends(plot_data)
 
-regions <- readRDS("data/processed/bcr_clean.rds")
+regions <- readRDS("data/processed/bcr_simplified.rds")
+
 
 # Load the bird species information we collected
 bird_species_info <- readRDS("data/bird_species_info.rds")
@@ -136,43 +137,55 @@ server <- function(input, output, session) {
       setView(-98, 41, zoom = 4) %>%
       addTiles()
   })
+  
+  
   # Update map colors when data changes
   observe({
     data <- trendMapData()
     
-    # Get the range of slopes for all significant trends
-    significant_data <- data %>%
-      filter(!is.na(slope) & !is.na(p_value) & p_value < 0.05)
+    # Get all available slope data (remove p-value filtering)
+    available_data <- data %>%
+      filter(!is.na(slope))
     
-    # Calculate symmetric range around zero
-    max_abs_slope <- max(abs(significant_data$slope), na.rm = TRUE)
-    slope_range <- c(-max_abs_slope, max_abs_slope)
+    # Calculate symmetric range around zero for relative scaling
+    max_abs_slope <- max(abs(available_data$slope), na.rm = TRUE)
     
-    # Create color palette for slopes (diverging: red-white-green)
-    pal3 <- colorNumeric(
-      palette = c("#8B0000", "#CD5C5C", "#FFFFFF", "#90EE90", "#006400"),
-      domain = slope_range
-    )
+    # Create custom color mapping function based on slope values only
+    get_color <- function(slope, trend_category) {
+      # Handle missing data first
+      if (is.na(slope) || is.na(trend_category)) return("#D3D3D3")  # No Data - Light Gray
+      
+      # Handle stable trends (very small slopes)
+      if (trend_category == "Stable") return("#F4F4F4")  # Stable - Very Light Gray
+      
+      # For all other trends, color based on relative magnitude
+      if (max_abs_slope > 0) {
+        slope_intensity <- abs(slope) / max_abs_slope  # Scale from 0 to 1
+        
+        if (slope > 0) {
+          # Increasing: Light Green to Dark Green
+          if (slope_intensity <= 0.5) {
+            return("#90EE90")  # Light Green
+          } else {
+            return("#228B22")  # Dark Green
+          }
+        } else {
+          # Decreasing: Light Red to Dark Red  
+          if (slope_intensity <= 0.5) {
+            return("#F08080")  # Light Red
+          } else {
+            return("#B22222")  # Dark Red
+          }
+        }
+      }
+      
+      return("#D3D3D3")  # Default fallback
+    }
+    
+    # Apply colors to data
+    data$map_color <- mapply(get_color, data$slope, data$trend_category)
     
 
-      
-      
-    # Create color palette
-    pal <- colorFactor(
-      palette = c("Decreasing" = "#CD5C5C", 
-                  "Increasing" = "#2E8B57", 
-                  "No Data" = "#D3D3D3",
-                  "Not Significant" = "#808080",
-                  "Stable" = "#808080"),
-      domain = c("Decreasing", "Increasing", "No Data", "Not Significant", "Stable"),
-      na.color = "#D3D3D3"
-    )
-    
-    pal2 <- colorNumeric(
-      palette = "RdYlGn",
-      domain = data$slope
-    )
-    
     # Create popup content
     popup_content <- paste0(
       "<strong>Region:</strong> ", data$BCR_clean, "<br>",
@@ -190,9 +203,8 @@ server <- function(input, output, session) {
       clearShapes() %>%
       addPolygons(
         layerId = ~BCR_clean,
-        #fillColor = ~pal(ifelse(is.na(trend_category), "No Data", trend_category)),
-        color = ~pal2(slope),
-        #color = "white",
+        fillColor = ~map_color,
+        color = "white",
         weight = 1,
         opacity = 1,
         fillOpacity = 0.8,
@@ -210,9 +222,10 @@ server <- function(input, output, session) {
           bringToFront = TRUE
         )
       ) %>%
+      clearControls() %>%
       addLegend(
-        colors = c("#2E8B57", "#CD5C5C", "#808080", "#D3D3D3"),
-        labels = c("Increasing", "Decreasing", "Stable", "No Data"),
+        colors = c("#228B22", "#90EE90", "#F4F4F4", "#F08080", "#B22222", "#D3D3D3"),
+        labels = c("Strong Increase", "Moderate Increase", "Stable", "Moderate Decrease", "Strong Decrease", "No Data"),
         title = "Population Trend",
         position = "bottomright",
         opacity = 0.8,
