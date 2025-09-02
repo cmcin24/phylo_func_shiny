@@ -23,6 +23,9 @@ trend_data <- calculate_trends(plot_data)
 
 regions <- readRDS("data/processed/bcr_clean.rds")
 
+# Load the bird species information we collected
+bird_species_info <- readRDS("data/bird_species_info.rds")
+
 
 
 # Define UI for application
@@ -53,12 +56,10 @@ ui <- fluidPage(navset_tab(
   nav_panel("Species Information", 
             fluidRow(
               column(8,
-                     h3("Species Details"),
                      uiOutput("species_info_detailed")
               ),
               column(4,
-                     h3("Quick Reference"),
-                     DTOutput("species_table_compact")
+                     uiOutput("species_image")
               )
             ),
             hr(),
@@ -83,6 +84,14 @@ server <- function(input, output, session) {
     d <- plot_data %>%
       filter(species == selected_species, region == selected_region)
   })
+  
+  # Get current species info
+  current_species_info <- reactive({
+    req(input$select)
+    bird_species_info %>%
+      filter(scientific_name == input$select)
+  })
+  
   # Prepare trend data for the selected species
   trendMapData <- reactive({
     req(input$select)
@@ -240,6 +249,115 @@ server <- function(input, output, session) {
       updateSelectInput(session, "region", selected = click$id)
     }
   })
+  
+  # Detailed Species Information Panel
+  output$species_info_detailed <- renderUI({
+    species_info <- current_species_info()
+    
+    if (nrow(species_info) == 0) return(div("No species selected"))
+    
+    div(
+      style = "border: 1px solid #ddd; border-radius: 12px; padding: 25px; background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);",
+      
+      # Header with photo
+      div(
+        style = "display: flex; align-items: center; margin-bottom: 20px;",
+        div(
+          style = "flex: 1;",
+          h2(species_info$common_name, style = "color: #2E8B57; margin: 0;"),
+          h5(em(species_info$scientific_name_display), style = "color: #666; margin: 5px 0;")
+        )
+      ),
+      
+      # All About Birds Species Description
+      if (!is.na(species_info$description) && 
+          !grepl("not available|please visit", species_info$description, ignore.case = TRUE)) {
+        div(
+          style = "margin-bottom: 20px; padding: 20px; background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);",
+          p(species_info$description, 
+            style = "line-height: 1.7; margin: 0; font-size: 16px; color: #333;"),
+          p(em("Source: All About Birds"), 
+            style = "font-size: 0.9em; color: #666; margin-top: 15px; margin-bottom: 0;")
+        )
+      }
+    )
+  })
+  
+  # Bird image display - centered and larger
+  output$species_image <- renderUI({
+    species_info <- current_species_info()
+    
+    if (nrow(species_info) == 0) return(div("No species selected"))
+    
+    # Display centered and larger image
+    div(
+      style = "text-align: center; padding: 20px;",
+      if (!is.na(species_info$photo_url) && species_info$photo_url != "") {
+        img(src = species_info$photo_url, 
+            style = "max-width: 100%; width: 350px; height: 300px; object-fit: cover; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.2);")
+      } else {
+        div(
+          style = "width: 350px; height: 300px; border: 2px dashed #ccc; border-radius: 12px; display: flex; align-items: center; justify-content: center; margin: 0 auto; color: #666;",
+          p("No image available", style = "margin: 0;")
+        )
+      }
+    )
+  })
+  
+  # Full species table - fixed to properly display data
+  output$species_table_full <- renderDT({
+    # Add error handling and debugging
+    tryCatch({
+      if (nrow(bird_species_info) == 0) {
+        return(datatable(data.frame("Message" = "No data available"), 
+                         options = list(dom = 't'), 
+                         rownames = FALSE))
+      }
+      
+      # Check if required columns exist
+      required_cols <- c("common_name", "scientific_name_display")
+      missing_cols <- setdiff(required_cols, names(bird_species_info))
+      
+      if (length(missing_cols) > 0) {
+        # If scientific_name_display doesn't exist, try scientific_name
+        if ("scientific_name_display" %in% missing_cols && "scientific_name" %in% names(bird_species_info)) {
+          display_data <- bird_species_info %>%
+            select(common_name, scientific_name) %>%
+            rename("Common Name" = common_name,
+                   "Scientific Name" = scientific_name)
+        } else {
+          # Show what columns are available
+          return(datatable(data.frame("Available columns" = names(bird_species_info)), 
+                           options = list(pageLength = 10), 
+                           rownames = FALSE))
+        }
+      } else {
+        display_data <- bird_species_info %>%
+          select(common_name, scientific_name_display) %>%
+          rename("Common Name" = common_name,
+                 "Scientific Name" = scientific_name_display)
+      }
+      
+      datatable(display_data,
+                options = list(
+                  pageLength = 10,
+                  scrollX = TRUE,
+                  autoWidth = TRUE,
+                  columnDefs = list(
+                    list(width = '300px', targets = c(0, 1))
+                  )
+                ),
+                rownames = FALSE)
+    }, error = function(e) {
+      # Return error information
+      datatable(data.frame("Error" = paste("Error loading data:", e$message),
+                           "Data structure" = paste("Columns available:", paste(names(bird_species_info), collapse = ", ")),
+                           "Rows" = nrow(bird_species_info)), 
+                options = list(dom = 't'), 
+                rownames = FALSE)
+    })
+  })
+  
 }
 
 
