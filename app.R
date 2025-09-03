@@ -38,16 +38,6 @@ ui <- fluidPage(navset_tab(
       selectInput("region", "Choose region:", c("BCR2", "BCR4", "BCR5", "BCR6", "BCR8", "BCR9", "BCR10", "BCR11", "BCR12", "BCR13", "BCR14", "BCR15",
                 "BCR16", "BCR17", "BCR18", "BCR19", "BCR20", "BCR21", "BCR22", "BCR23", "BCR24",
                 "BCR25", "BCR26", "BCR27", "BCR28", "BCR29", "BCR30", "BCR31", "BCR32", "BCR33", "BCR34", "BCR35", "BCR36", "BCR37")),
-      # sliderInput(
-      #   "slider",
-      #   "Year",
-      #   min = 1992,
-      #   max = 2024,
-      #   value = 1992,
-      #   animate = animationOptions(interval = 100, loop = FALSE)
-      # ),
-      #checkboxInput("show_only_significant", "Show only significant trends (p < 0.05)", 
-       #             value = FALSE),
       plotOutput("plot")
       
     ),
@@ -71,7 +61,16 @@ ui <- fluidPage(navset_tab(
               )
             )
   ),
-  nav_panel("Species Comparison"),
+  nav_panel("Species Comparison", page_sidebar(
+    sidebar = sidebar(
+      width = 300,
+      selectInput("region2", "Choose region:", c("BCR2", "BCR4", "BCR5", "BCR6", "BCR8", "BCR9", "BCR10", "BCR11", "BCR12", "BCR13", "BCR14", "BCR15",
+                                                "BCR16", "BCR17", "BCR18", "BCR19", "BCR20", "BCR21", "BCR22", "BCR23", "BCR24",
+                                                "BCR25", "BCR26", "BCR27", "BCR28", "BCR29", "BCR30", "BCR31", "BCR32", "BCR33", "BCR34", "BCR35", "BCR36", "BCR37")),
+      selectInput("select2", "Choose species:", c("Polioptila_caerulea", "Chordeiles_minor", "Anas_platyrhynchos", "Columba_livia", "Vireo_gilvus", "Falco_sparverius", "Dryocopus_pileatus", "Hirundo_rustica", "Sturnella_neglecta", "Geothlypis_trichas"))
+    ),
+    leafletOutput("region_map"),
+  ), ),
 ), id = "tab", )
 
 # Define server logic
@@ -94,22 +93,12 @@ server <- function(input, output, session) {
   })
   
   # Prepare trend data for the selected species
-  trendMapData <- reactive({
+  speciesTrendMapData <- reactive({
     req(input$select)
     
     # Get trend data for selected species
     species_trends <- trend_data %>%
       filter(species == input$select)
-    
-    # # Apply significance filter if requested
-    # if (input$show_only_significant) {
-    #   species_trends <- species_trends %>%
-    #     mutate(
-    #       trend_category = ifelse(p_value >= 0.05 | is.na(p_value), "Not Significant", trend_category),
-    #       slope = ifelse(p_value >= 0.05 | is.na(p_value), NA, slope),
-    #       r_squared = ifelse(p_value >= 0.05 | is.na(p_value), NA, r_squared)
-    #     )
-    # }
     
     # Join species data with spatial data
     map_data <- regions %>%
@@ -117,20 +106,6 @@ server <- function(input, output, session) {
     
     return(map_data)
   })
-  
-  # # Leaflet map output
-  # output$map <- renderLeaflet({
-  #   leaflet(regions) %>%
-  #     setView(-98, 41, zoom = 4) %>%
-  #     addPolygons(
-  #       layerId = ~BCR_clean,
-  #       color = "grey",
-  #       fillOpacity = 0.5,
-  #       weight = 0.8,
-  #       highlightOptions = highlightOptions(weight = 3, color = 'black')
-  #     ) %>%
-  #     addTiles()
-  # })
   
   output$map <- renderLeaflet({
     leaflet(regions) %>%
@@ -141,7 +116,7 @@ server <- function(input, output, session) {
   
   # Update map colors when data changes
   observe({
-    data <- trendMapData()
+    data <- speciesTrendMapData()
     
     # Get all available slope data (remove p-value filtering)
     available_data <- data %>%
@@ -192,10 +167,6 @@ server <- function(input, output, session) {
       "<strong>Species:</strong> ", gsub("_", " ", input$select), "<br>",
       "<strong>Trend:</strong> ", ifelse(is.na(data$trend_category), "No Data", data$trend_category), "<br>",
       "<strong>Slope:</strong> ", round(data$slope, 4)
-      #, "<br>",
-      #"<strong>P-value:</strong> ", round(data$p_value, 4)
-      #, "<br>",
-      #"<strong>R²:</strong> ", round(data$r_squared, 3)
     )
     
     # Update polygons using leafletProxy
@@ -370,6 +341,111 @@ server <- function(input, output, session) {
                 rownames = FALSE)
     })
   })
+  
+  # Prepare trend data for the selected species
+  regionTrendMapData <- reactive({
+    req(input$region2)
+    
+    # Get trend data for selected species
+    species_trends <- trend_data %>%
+      filter(species == input$select)
+    
+    # Join species data with spatial data
+    map_data <- regions %>%
+      left_join(species_trends, by = c("BCR_clean" = "region"))
+    
+    return(map_data)
+  })
+  
+  output$region_map <- renderLeaflet({
+    data <- regions
+    leaflet() %>%
+      setView(-98, 41, zoom = 4) %>%
+      addTiles() %>%
+      addPolygons(
+        data = data,
+        layerId = ~BCR_clean,
+        #fillColor = ~map_color,
+        color = "grey",
+        weight = 1,
+        opacity = 0.4,
+        fillOpacity = 0.2,
+        label = ~BCR_clean,
+        labelOptions = labelOptions(
+          style = list("font-weight" = "normal", "padding" = "3px 8px"),
+          textsize = "13px",
+          direction = "auto"
+        ),
+        highlightOptions = highlightOptions(
+          weight = 3,
+          color = "black",
+          bringToFront = TRUE
+        )
+      )
+  })
+  
+
+  
+  #   # Observer for region selection
+  # observeEvent(input$region2, {
+  #   if (input$region2 != "") {
+  #     # Filter to selected region
+  #     selected_region <- regions[regions$BCR_clean == input$region2, ]
+  #     
+  #     # Get bounding box of selected region
+  #     bbox <- st_bbox(selected_region)
+  #     
+  #     # Extract coordinates as individual values to avoid named vector issues
+  #     xmin <- as.numeric(bbox["xmin"])
+  #     ymin <- as.numeric(bbox["ymin"])
+  #     xmax <- as.numeric(bbox["xmax"])
+  #     ymax <- as.numeric(bbox["ymax"])
+  #     
+  #     # Zoom to selected region
+  #     leafletProxy("region_map") %>%
+  #       fitBounds(lng1 = xmin, 
+  #                 lat1 = ymin,
+  #                 lng2 = xmax, 
+  #                 lat2 = ymax,
+  #                 options = list(padding = c(50, 50)))
+  #   }
+  # })
+  
+  
+
+  
+  # Observer for region selection
+  observeEvent(input$region2, {
+    if (input$region2 != "") {
+      # Filter to selected region
+      selected_region <- regions[regions$BCR_clean == input$region2, ]
+      
+      # Get bounding box of selected region
+      bbox <- st_bbox(selected_region)
+      
+      # Extract coordinates as individual values to avoid named vector issues
+      xmin <- as.numeric(bbox["xmin"])
+      ymin <- as.numeric(bbox["ymin"])
+      xmax <- as.numeric(bbox["xmax"])
+      ymax <- as.numeric(bbox["ymax"])
+      
+      # Zoom to selected region
+      leafletProxy("region_map") %>%
+        # Clear existing highlights (optional)
+        clearGroup("highlight") %>%
+        # Highlight selected region
+        addPolygons(data = selected_region,
+                    #fillColor = "red",
+                    #fillOpacity = 0.6,
+                    color = "black",
+                    weight = 3,
+                    group = "highlight") %>%
+        fitBounds(lng1 = xmin, 
+                  lat1 = ymin,
+                  lng2 = xmax, 
+                  lat2 = ymax)
+      }
+  }) 
   
 }
 
