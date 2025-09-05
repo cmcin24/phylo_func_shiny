@@ -30,18 +30,23 @@ bird_species_info <- readRDS("data/bird_species_info.rds")
 
 
 # Define UI for application
-ui <- fluidPage(navset_tab(
-  nav_panel("Map", page_sidebar(
+ui <- fillPage(navset_tab(
+  nav_panel("Map", 
+            page_sidebar(
     sidebar = sidebar(
+      height = "90vh",
       width = 300,
-      selectInput("select", "Choose species:", c("Polioptila_caerulea", "Chordeiles_minor", "Anas_platyrhynchos", "Columba_livia", "Vireo_gilvus", "Falco_sparverius", "Dryocopus_pileatus", "Hirundo_rustica", "Sturnella_neglecta", "Geothlypis_trichas")),
-      selectInput("region", "Choose region:", c("BCR2", "BCR4", "BCR5", "BCR6", "BCR8", "BCR9", "BCR10", "BCR11", "BCR12", "BCR13", "BCR14", "BCR15",
+      selectInput("select", "Choose species:", c("", "Polioptila_caerulea", "Chordeiles_minor", "Anas_platyrhynchos", "Columba_livia", "Vireo_gilvus", "Falco_sparverius", "Dryocopus_pileatus", "Hirundo_rustica", "Sturnella_neglecta", "Geothlypis_trichas")),
+      nav_spacer(),
+      selectInput("region", "Choose region:", c("", "BCR2", "BCR4", "BCR5", "BCR6", "BCR8", "BCR9", "BCR10", "BCR11", "BCR12", "BCR13", "BCR14", "BCR15",
                 "BCR16", "BCR17", "BCR18", "BCR19", "BCR20", "BCR21", "BCR22", "BCR23", "BCR24",
                 "BCR25", "BCR26", "BCR27", "BCR28", "BCR29", "BCR30", "BCR31", "BCR32", "BCR33", "BCR34", "BCR35", "BCR36", "BCR37")),
       plotOutput("plot")
       
     ),
+    tags$style(type = "text/css", "#map {height: calc(100vh - 80px) !important;}"),
     leafletOutput("map"),
+    absolutePanel
   ), ),
   nav_panel("Tree", "Content"),
   nav_panel("Species Information", 
@@ -70,15 +75,15 @@ ui <- fluidPage(navset_tab(
       selectInput("select2", "Choose species:", c("Polioptila_caerulea", "Chordeiles_minor", "Anas_platyrhynchos", "Columba_livia", "Vireo_gilvus", "Falco_sparverius", "Dryocopus_pileatus", "Hirundo_rustica", "Sturnella_neglecta", "Geothlypis_trichas"))
     ),
     leafletOutput("region_map"),
-  ), ),
-), id = "tab", )
+  ), ), 
+), )
 
 # Define server logic
 server <- function(input, output, session) {
   # Load data for plots
   plotDataInput <- reactive({
     req(input$select)
-    req(input$select)
+    req(input$region)
     selected_species <- input$select
     selected_region <- input$region
     d <- plot_data %>%
@@ -113,6 +118,12 @@ server <- function(input, output, session) {
       addTiles()
   })
   
+  output$test <- renderLeaflet({
+    leaflet(regions) %>%
+      setView(-98, 41, zoom = 4) %>%
+      addTiles()
+  })
+  
   
   # Update map colors when data changes
   observe({
@@ -128,10 +139,10 @@ server <- function(input, output, session) {
     # Create custom color mapping function based on slope values only
     get_color <- function(slope, trend_category) {
       # Handle missing data first
-      if (is.na(slope) || is.na(trend_category)) return("#D3D3D3")  # No Data - Light Gray
+      if (is.na(slope) || is.na(trend_category)) return("#F4F4F4")  # No Data - Very Light Gray
       
       # Handle stable trends (very small slopes)
-      if (trend_category == "Stable") return("#F4F4F4")  # Stable - Very Light Gray
+      if (trend_category == "Stable") return("#D3D3D3")  # Stable - Light Gray
       
       # For all other trends, color based on relative magnitude
       if (max_abs_slope > 0) {
@@ -140,21 +151,21 @@ server <- function(input, output, session) {
         if (slope > 0) {
           # Increasing: Light Green to Dark Green
           if (slope_intensity <= 0.5) {
-            return("#90EE90")  # Light Green
+            return("#b6d7a8")  # Light Green
           } else {
-            return("#228B22")  # Dark Green
+            return("#006600")  # Dark Green
           }
         } else {
           # Decreasing: Light Red to Dark Red  
           if (slope_intensity <= 0.5) {
-            return("#F08080")  # Light Red
+            return("#ea9999")  # Light Red
           } else {
-            return("#B22222")  # Dark Red
+            return("#CC0000")  # Dark Red
           }
         }
       }
       
-      return("#D3D3D3")  # Default fallback
+      return("#F4F4F4")  # Default fallback
     }
     
     # Apply colors to data
@@ -195,7 +206,7 @@ server <- function(input, output, session) {
       ) %>%
       clearControls() %>%
       addLegend(
-        colors = c("#228B22", "#90EE90", "#F4F4F4", "#F08080", "#B22222", "#D3D3D3"),
+        colors = c("#006600", "#b6d7a8", "#D3D3D3", "#ea9999", "#CC0000", "#F4F4F4"),
         labels = c("Strong Increase", "Moderate Increase", "Stable", "Moderate Decrease", "Strong Decrease", "No Data"),
         title = "Population Trend",
         position = "bottomright",
