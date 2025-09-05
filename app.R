@@ -34,11 +34,11 @@ bird_species_info <- readRDS("data/bird_species_info.rds")
 # Define UI for application
 ui <- fillPage(theme = shinytheme("flatly"), navset_tab(
   nav_panel("Map", 
-            tags$style(type = "text/css", "#map {height: calc(100vh - 80px) !important;}", "#controls {background-color: white; padding: 0 20px 20px 20px; opacity: 0.65; zoom: 0.9}"),
+            tags$style(type = "text/css", "#map {height: calc(100vh - 80px) !important;}", "#controls {background-color: white; padding: 20px 20px 20px 20px; opacity: 0.8; zoom: 0.9}"),
             leafletOutput("map"),
             absolutePanel(id = "controls", class = "panel panel-default",
-                          top = 75, left = 55, width = 250, fixed=TRUE,
-                          draggable = TRUE, height = "auto",
+                          top = 75, left = 55, width = 270, fixed=TRUE,
+                          draggable = TRUE, height = 400,
                           selectInput("select", "Choose species:", c("", "Polioptila_caerulea", "Chordeiles_minor", "Anas_platyrhynchos", "Columba_livia", "Vireo_gilvus", "Falco_sparverius", "Dryocopus_pileatus", "Hirundo_rustica", "Sturnella_neglecta", "Geothlypis_trichas")),
                           selectInput("region", "Choose region:", c("", "BCR2", "BCR4", "BCR5", "BCR6", "BCR8", "BCR9", "BCR10", "BCR11", "BCR12", "BCR13", "BCR14", "BCR15",
                                                                     "BCR16", "BCR17", "BCR18", "BCR19", "BCR20", "BCR21", "BCR22", "BCR23", "BCR24",
@@ -48,7 +48,7 @@ ui <- fillPage(theme = shinytheme("flatly"), navset_tab(
   nav_panel("Tree", "Content"),
   nav_panel("Species Information", 
             fluidRow(
-              column(8,
+              column(8, style = "padding: 30px;",
                      uiOutput("species_info_detailed")
               ),
               column(4,
@@ -57,17 +57,17 @@ ui <- fillPage(theme = shinytheme("flatly"), navset_tab(
             ),
             hr(),
             fluidRow(
-              column(12,
+              column(12, style = "padding: 30px;",
                      h3("All Species Database"),
                      DTOutput("species_table_full")
               )
             )
   ),
   nav_panel("Species Comparison", 
-            tags$style(type = "text/css", "#region_map {height: calc(100vh - 80px) !important;}", "#controls {background-color: white; padding: 0 20px 20px 20px; opacity: 0.65; zoom: 0.9}"),
+            tags$style(type = "text/css", "#region_map {height: calc(100vh - 80px) !important;}", "#controls2 {background-color: white; padding: 0 20px 20px 20px; opacity: 0.65; zoom: 0.9}"),
             leafletOutput("region_map"),
-            absolutePanel(id = "controls", class = "panel panel-default",
-                          top = 75, left = 55, width = 250, fixed=TRUE,
+            absolutePanel(id = "controls2", class = "panel panel-default",
+                          top = 75, left = 55, width = 270, fixed=TRUE,
                           draggable = TRUE, height = "auto",
                           selectInput("region2", "Choose region:", c("", "BCR2", "BCR4", "BCR5", "BCR6", "BCR8", "BCR9", "BCR10", "BCR11", "BCR12", "BCR13", "BCR14", "BCR15",
                                                                     "BCR16", "BCR17", "BCR18", "BCR19", "BCR20", "BCR21", "BCR22", "BCR23", "BCR24",
@@ -228,8 +228,8 @@ server <- function(input, output, session) {
       theme_classic() +
       theme(plot.title = element_text(size = 10))
   },
-  width = 220,
-  height = 220
+  width = 200,
+  height = 200
   )
 
   observeEvent(input$map_shape_click, {
@@ -249,7 +249,7 @@ server <- function(input, output, session) {
     div(
       style = "border: 1px solid #ddd; border-radius: 12px; padding: 25px; background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);",
       
-      # Header with photo
+      # Header 
       div(
         style = "display: flex; align-items: center; margin-bottom: 20px;",
         div(
@@ -281,10 +281,10 @@ server <- function(input, output, session) {
     
     # Display centered and larger image
     div(
-      style = "text-align: center; padding: 20px;",
+      style = "padding: 30px; height: 100%;",
       if (!is.na(species_info$photo_url) && species_info$photo_url != "") {
         img(src = species_info$photo_url, 
-            style = "max-width: 100%; width: 350px; height: 300px; object-fit: cover; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.2);")
+            style = "max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.2);")
       } else {
         div(
           style = "width: 350px; height: 300px; border: 2px dashed #ccc; border-radius: 12px; display: flex; align-items: center; justify-content: center; margin: 0 auto; color: #666;",
