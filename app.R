@@ -11,6 +11,8 @@ library(ggplot2)
 library(dplyr)
 library(DT)
 library(RColorBrewer)
+library(shinythemes)
+
 
 # source some functions
 source("./R/functions.R")
@@ -30,24 +32,19 @@ bird_species_info <- readRDS("data/bird_species_info.rds")
 
 
 # Define UI for application
-ui <- fillPage(navset_tab(
+ui <- fillPage(theme = shinytheme("flatly"), navset_tab(
   nav_panel("Map", 
-            page_sidebar(
-    sidebar = sidebar(
-      height = "90vh",
-      width = 300,
-      selectInput("select", "Choose species:", c("", "Polioptila_caerulea", "Chordeiles_minor", "Anas_platyrhynchos", "Columba_livia", "Vireo_gilvus", "Falco_sparverius", "Dryocopus_pileatus", "Hirundo_rustica", "Sturnella_neglecta", "Geothlypis_trichas")),
-      nav_spacer(),
-      selectInput("region", "Choose region:", c("", "BCR2", "BCR4", "BCR5", "BCR6", "BCR8", "BCR9", "BCR10", "BCR11", "BCR12", "BCR13", "BCR14", "BCR15",
-                "BCR16", "BCR17", "BCR18", "BCR19", "BCR20", "BCR21", "BCR22", "BCR23", "BCR24",
-                "BCR25", "BCR26", "BCR27", "BCR28", "BCR29", "BCR30", "BCR31", "BCR32", "BCR33", "BCR34", "BCR35", "BCR36", "BCR37")),
-      plotOutput("plot")
-      
-    ),
-    tags$style(type = "text/css", "#map {height: calc(100vh - 80px) !important;}"),
-    leafletOutput("map"),
-    absolutePanel
-  ), ),
+            tags$style(type = "text/css", "#map {height: calc(100vh - 80px) !important;}", "#controls {background-color: white; padding: 0 20px 20px 20px; opacity: 0.65; zoom: 0.9}"),
+            leafletOutput("map"),
+            absolutePanel(id = "controls", class = "panel panel-default",
+                          top = 75, left = 55, width = 250, fixed=TRUE,
+                          draggable = TRUE, height = "auto",
+                          selectInput("select", "Choose species:", c("", "Polioptila_caerulea", "Chordeiles_minor", "Anas_platyrhynchos", "Columba_livia", "Vireo_gilvus", "Falco_sparverius", "Dryocopus_pileatus", "Hirundo_rustica", "Sturnella_neglecta", "Geothlypis_trichas")),
+                          selectInput("region", "Choose region:", c("", "BCR2", "BCR4", "BCR5", "BCR6", "BCR8", "BCR9", "BCR10", "BCR11", "BCR12", "BCR13", "BCR14", "BCR15",
+                                                                    "BCR16", "BCR17", "BCR18", "BCR19", "BCR20", "BCR21", "BCR22", "BCR23", "BCR24",
+                                                                    "BCR25", "BCR26", "BCR27", "BCR28", "BCR29", "BCR30", "BCR31", "BCR32", "BCR33", "BCR34", "BCR35", "BCR36", "BCR37")),
+                          plotOutput("plot")
+            ), ),
   nav_panel("Tree", "Content"),
   nav_panel("Species Information", 
             fluidRow(
@@ -66,16 +63,20 @@ ui <- fillPage(navset_tab(
               )
             )
   ),
-  nav_panel("Species Comparison", page_sidebar(
-    sidebar = sidebar(
-      width = 300,
-      selectInput("region2", "Choose region:", c("BCR2", "BCR4", "BCR5", "BCR6", "BCR8", "BCR9", "BCR10", "BCR11", "BCR12", "BCR13", "BCR14", "BCR15",
-                                                "BCR16", "BCR17", "BCR18", "BCR19", "BCR20", "BCR21", "BCR22", "BCR23", "BCR24",
-                                                "BCR25", "BCR26", "BCR27", "BCR28", "BCR29", "BCR30", "BCR31", "BCR32", "BCR33", "BCR34", "BCR35", "BCR36", "BCR37")),
-      selectInput("select2", "Choose species:", c("Polioptila_caerulea", "Chordeiles_minor", "Anas_platyrhynchos", "Columba_livia", "Vireo_gilvus", "Falco_sparverius", "Dryocopus_pileatus", "Hirundo_rustica", "Sturnella_neglecta", "Geothlypis_trichas"))
-    ),
-    leafletOutput("region_map"),
-  ), ), 
+  nav_panel("Species Comparison", 
+            tags$style(type = "text/css", "#region_map {height: calc(100vh - 80px) !important;}", "#controls {background-color: white; padding: 0 20px 20px 20px; opacity: 0.65; zoom: 0.9}"),
+            leafletOutput("region_map"),
+            absolutePanel(id = "controls", class = "panel panel-default",
+                          top = 75, left = 55, width = 250, fixed=TRUE,
+                          draggable = TRUE, height = "auto",
+                          selectInput("region2", "Choose region:", c("", "BCR2", "BCR4", "BCR5", "BCR6", "BCR8", "BCR9", "BCR10", "BCR11", "BCR12", "BCR13", "BCR14", "BCR15",
+                                                                    "BCR16", "BCR17", "BCR18", "BCR19", "BCR20", "BCR21", "BCR22", "BCR23", "BCR24",
+                                                                    "BCR25", "BCR26", "BCR27", "BCR28", "BCR29", "BCR30", "BCR31", "BCR32", "BCR33", "BCR34", "BCR35", "BCR36", "BCR37")),
+                          selectInput("select2", "Choose species:", c("", "Polioptila_caerulea", "Chordeiles_minor", "Anas_platyrhynchos", "Columba_livia", "Vireo_gilvus", "Falco_sparverius", "Dryocopus_pileatus", "Hirundo_rustica", "Sturnella_neglecta", "Geothlypis_trichas")),
+                          h3(""),
+                          h4(""),
+                          ),
+            ), 
 ), )
 
 # Define server logic
@@ -114,13 +115,7 @@ server <- function(input, output, session) {
   
   output$map <- renderLeaflet({
     leaflet(regions) %>%
-      setView(-98, 41, zoom = 4) %>%
-      addTiles()
-  })
-  
-  output$test <- renderLeaflet({
-    leaflet(regions) %>%
-      setView(-98, 41, zoom = 4) %>%
+      setView(-104, 41, zoom = 4) %>%
       addTiles()
   })
   
