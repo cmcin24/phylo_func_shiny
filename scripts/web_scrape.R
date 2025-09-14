@@ -259,25 +259,87 @@ saveRDS(final_bird_data, output_file)
 # Also save as CSV for easy viewing/editing
 write.csv(final_bird_data, "data/bird_species_info.csv", row.names = FALSE)
 
-cat("\nData collection complete!\n")
-cat("Files saved:\n")
-cat("- ", output_file, "\n")
-cat("- data/bird_species_info.csv\n\n")
 
-# Display summary
-cat("Summary of collected data:\n")
-print(final_bird_data[, c("common_name", "scientific_name_display")])
 
-# Show a sample of descriptions
-cat("\nSample descriptions:\n")
-for(i in 1:min(3, nrow(final_bird_data))) {
-  cat("\n", final_bird_data$common_name[i], ":\n")
-  desc_preview <- if(nchar(final_bird_data$description[i]) > 100) {
-    paste0(str_sub(final_bird_data$description[i], 1, 100), "...")
-  } else {
-    final_bird_data$description[i]
+# NEW FUNCTION: Get Bird Conservation Region data from NABCI website
+get_bcr_data <- function() {
+  cat("Fetching Bird Conservation Region data from NABCI...\n")
+  
+    # URL for the NABCI BCR map page
+    url <- "https://nabci-us.org/resources/bird-conservation-regions-map/"
+    
+    # Add delay to be respectful
+    Sys.sleep(1)
+    
+    # Try to read the page
+    page <- read_html(url)
+    
+    # Get the page text content
+    page_text <- html_text(page)
+    
+    # Define BCR names and numbers based on the website structure
+    bcr_info <- list()
+    
+    # Extract BCR sections using pattern matching
+    # The pattern looks for "Bird Conservation Region X – Name" followed by the description
+    bcr_pattern <- "Bird Conservation Region (\\d+) – ([^\n]+)\n([^\\[]+?)(?=\\[Joint Venture|Bird Conservation Region|$)"
+    matches <- str_match_all(page_text, bcr_pattern)[[1]]
+    
+    if (nrow(matches) > 0) {
+      for (i in 1:nrow(matches)) {
+        bcr_number <- as.numeric(matches[i, 2])
+        bcr_name <- str_trim(matches[i, 3])
+        bcr_description <- str_trim(matches[i, 4])
+        
+        # Clean up the description - remove extra whitespace and limit length
+        bcr_description <- bcr_description %>%
+          str_replace_all("\\s+", " ") %>%
+          str_trim() %>%
+          str_sub(1, 2000)  # Limit to 2000 characters
+        
+        # If description is too long, try to end at a complete sentence
+        if (nchar(bcr_description) == 2000) {
+          last_period <- str_locate_all(bcr_description, "\\.")[[1]]
+          if (nrow(last_period) > 0) {
+            last_complete <- max(last_period[, "end"])
+            if (last_complete > 500) {  # Only if we have a substantial amount
+              bcr_description <- str_sub(bcr_description, 1, last_complete)
+            }
+          }
+        }
+        
+        bcr_info[[length(bcr_info) + 1]] <- data.frame(
+          bcr_number = bcr_number,
+          bcr_name = bcr_name,
+          bcr_description = bcr_description,
+          stringsAsFactors = FALSE
+        )
+        
+        cat("Found BCR", bcr_number, ":", bcr_name, "\n")
+      }
+    }
+
+    
+    # Convert list to data frame
+    if (length(bcr_info) > 0) {
+      bcr_data <- do.call(rbind, bcr_info)
+      bcr_data <- bcr_data[order(bcr_data$bcr_number), ]  # Sort by BCR number
+      return(bcr_data)
+    } else {
+      cat("No BCR data could be extracted\n")
+      return(data.frame(
+        bcr_number = integer(0),
+        bcr_name = character(0),
+        bcr_description = character(0),
+        stringsAsFactors = FALSE
+      ))
+    }
   }
-  cat(desc_preview, "\n")
-}
+  
+  
+  bcr_data <- get_bcr_data()
+  
+  # Save BCR data
+  bcr_output_file <- "data/processed/bcr_info_text.rds"
+  saveRDS(bcr_data, bcr_output_file)
 
-cat("\nYou can now use this data in your Shiny app!\n")
