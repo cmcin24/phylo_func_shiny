@@ -34,7 +34,13 @@ bird_species_info <- readRDS("data/bird_species_info.rds")
 # Define UI for application
 ui <- fillPage(theme = shinytheme("flatly"), navset_tab(
   nav_panel("Map", 
-            tags$style(type = "text/css", "#map {height: calc(100vh - 80px) !important;}", "#controls {background-color: white; padding: 20px 20px 20px 20px; opacity: 0.8; zoom: 0.9}"),
+            tags$style(type = "text/css", 
+                       "#map {height: calc(100vh - 80px) !important;}", 
+                       "#controls {background-color: white; padding: 20px 20px 20px 20px; opacity: 0.8; zoom: 0.9}",
+                       "#controls:hover {opacity: 0.95; transition-delay: 0}",
+                       "#species_info_panel {background-color: white; padding: 15px; opacity: 0.95; zoom: 0.85; max-height: 600px; overflow-y: auto;}",
+                       "#species_info_panel img {max-width: 200px; max-height: 150px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.15);}",
+                       "#species_info_panel .species-description {max-height: 300px; overflow-y: auto; font-size: 13px; line-height: 1.4;}"),
             leafletOutput("map"),
             absolutePanel(id = "controls", class = "panel panel-default",
                           top = 75, left = 55, width = 270, fixed=TRUE,
@@ -44,7 +50,16 @@ ui <- fillPage(theme = shinytheme("flatly"), navset_tab(
                                                                     "BCR16", "BCR17", "BCR18", "BCR19", "BCR20", "BCR21", "BCR22", "BCR23", "BCR24",
                                                                     "BCR25", "BCR26", "BCR27", "BCR28", "BCR29", "BCR30", "BCR31", "BCR32", "BCR33", "BCR34", "BCR35", "BCR36", "BCR37")),
                           plotOutput("plot")
-            ), ),
+            ), 
+            conditionalPanel(
+              condition = "input.select != ''",
+              absolutePanel(id = "species_info_panel", class = "panel panel-default",
+                            top = 75, right = 55, width = 320, fixed = TRUE,
+                            draggable = TRUE, height = "auto",
+                            uiOutput("species_info_map_panel")
+              )
+            )
+  ),
   nav_panel("Tree", "Content"),
   nav_panel("Species Information", 
             fluidRow(
@@ -64,20 +79,45 @@ ui <- fillPage(theme = shinytheme("flatly"), navset_tab(
             )
   ),
   nav_panel("Species Comparison", 
-            tags$style(type = "text/css", "#region_map {height: calc(100vh - 80px) !important;}", "#controls2 {background-color: white; padding: 0 20px 20px 20px; opacity: 0.65; zoom: 0.9}"),
+            tags$style(type = "text/css", "#region_map {height: calc(100vh - 80px) !important;}", 
+                       "#controls2 {background-color: white; padding: 0 20px 20px 20px; opacity: 0.65; zoom: 0.9}",
+                       "#controls2:hover {opacity: 0.95; transition-delay: 0}",
+                       "#comparison_plots {height: calc(50vh - 40px); overflow-y: auto;}"),
             leafletOutput("region_map"),
             absolutePanel(id = "controls2", class = "panel panel-default",
-                          top = 75, left = 55, width = 270, fixed=TRUE,
+                          top = 75, left = 55, width = 350, fixed=TRUE,
                           draggable = TRUE, height = "auto",
                           selectInput("region2", "Choose region:", c("", "BCR2", "BCR4", "BCR5", "BCR6", "BCR8", "BCR9", "BCR10", "BCR11", "BCR12", "BCR13", "BCR14", "BCR15",
-                                                                    "BCR16", "BCR17", "BCR18", "BCR19", "BCR20", "BCR21", "BCR22", "BCR23", "BCR24",
-                                                                    "BCR25", "BCR26", "BCR27", "BCR28", "BCR29", "BCR30", "BCR31", "BCR32", "BCR33", "BCR34", "BCR35", "BCR36", "BCR37")),
-                          selectInput("select2", "Choose species:", c("", "Polioptila_caerulea", "Chordeiles_minor", "Anas_platyrhynchos", "Columba_livia", "Vireo_gilvus", "Falco_sparverius", "Dryocopus_pileatus", "Hirundo_rustica", "Sturnella_neglecta", "Geothlypis_trichas")),
-                          h3(""),
-                          h4(""),
+                                                                     "BCR16", "BCR17", "BCR18", "BCR19", "BCR20", "BCR21", "BCR22", "BCR23", "BCR24",
+                                                                     "BCR25", "BCR26", "BCR27", "BCR28", "BCR29", "BCR30", "BCR31", "BCR32", "BCR33", "BCR34", "BCR35", "BCR36", "BCR37")),
+                          conditionalPanel(
+                            condition = "input.region2 != ''",
+                            h4("Select Species (up to 4):"),
+                            selectInput("species_selection", "",
+                                        choices = NULL,
+                                        selected = NULL,
+                                        multiple = TRUE)
                           ),
-            ), 
-), )
+                          conditionalPanel(
+                            condition = "input.region2 != '' && input.species_selection.length > 0",
+                            checkboxInput("combined_plot", "Display as combined plot", value = TRUE),
+                            hr(),
+                            # Combined plot
+                            conditionalPanel(
+                              condition = "input.combined_plot",
+                              plotOutput("combined_trends_plot", height = "300px")
+                            ),
+                            # Separate plots
+                            conditionalPanel(
+                              condition = "!input.combined_plot",
+                              uiOutput("separate_plots")
+                            )
+                          )
+            )
+  ), 
+), 
+
+)
 
 # Define server logic
 server <- function(input, output, session) {
@@ -222,7 +262,6 @@ server <- function(input, output, session) {
     ggplot(data, aes(x = year, y = pred)) +
       geom_line(linewidth = 1, alpha = 0.8, color = "darkblue") +
       geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.3, fill = "lightblue") +
-      #geom_vline(xintercept = input$slider, color = "red", linetype = "dashed", alpha = 0.7) +
       labs(title = paste("Expected Trend for", gsub("_", " ", input$select)),
            x = "Year", y = "Expected Trend") +
       theme_classic() +
@@ -238,6 +277,56 @@ server <- function(input, output, session) {
       # Update region selector based on map click
       updateSelectInput(session, "region", selected = click$id)
     }
+  })
+  
+  output$species_info_map_panel <- renderUI({
+    species_info <- current_species_info()
+    
+    if (nrow(species_info) == 0) return(div("No species selected"))
+    
+    div(
+      # Header with species names
+      div(
+        style = "margin-bottom: 15px; text-align: center;",
+        h4(species_info$common_name, 
+           style = "color: #2E8B57; margin: 0; font-size: 16px; font-weight: bold;"),
+        p(em(ifelse(is.na(species_info$scientific_name_display) | species_info$scientific_name_display == "", 
+                    species_info$scientific_name, 
+                    species_info$scientific_name_display)), 
+          style = "color: #666; margin: 5px 0; font-size: 13px;")
+      ),
+      
+      # Image
+      div(
+        style = "text-align: center; margin-bottom: 15px;",
+        if (!is.na(species_info$photo_url) && species_info$photo_url != "") {
+          img(src = species_info$photo_url)
+        } else {
+          div(
+            style = "width: 200px; height: 150px; border: 2px dashed #ccc; border-radius: 8px; display: flex; align-items: center; justify-content: center; margin: 0 auto; color: #666;",
+            p("No image available", style = "margin: 0; font-size: 12px;")
+          )
+        }
+      ),
+      
+      # Description
+      if (!is.na(species_info$description) && 
+          !grepl("not available|please visit", species_info$description, ignore.case = TRUE)) {
+        div(
+          class = "species-description",
+          style = "padding: 10px; background: #f8f9fa; border-radius: 5px; border-left: 3px solid #2E8B57;",
+          p(species_info$description, 
+            style = "margin: 0; color: #333;"),
+          p(em("Source: All About Birds"), 
+            style = "font-size: 11px; color: #666; margin-top: 8px; margin-bottom: 0;")
+        )
+      } else {
+        div(
+          style = "padding: 10px; background: #f8f9fa; border-radius: 5px; color: #666; font-style: italic;",
+          p("Description not available", style = "margin: 0; font-size: 13px;")
+        )
+      }
+    )
   })
   
   # Detailed Species Information Panel
@@ -420,7 +509,7 @@ server <- function(input, output, session) {
   
 
   
-  # Observer for region selection
+  # Observer for drop-down region selection
   observeEvent(input$region2, {
     if (input$region2 != "") {
       # Filter to selected region
@@ -452,6 +541,127 @@ server <- function(input, output, session) {
                   lat2 = ymax)
       }
   }) 
+  
+  # Observer for mouse-click region selection
+  observeEvent(input$region_map_shape_click, {
+    click <- input$region_map_shape_click
+    if (!is.null(click$id)){
+      # Update region selector based on map click
+      updateSelectInput(session, "region2", selected = click$id)
+    }
+  })
+  
+  # Update species options based on selected region
+  observeEvent(input$region2, {
+    if (input$region2 != "") {
+      # Get available species for the selected region
+      available_species <- plot_data %>%
+        filter(region == input$region2) %>%
+        distinct(species) %>%
+        pull(species)
+      
+      # Update the dropdown with available species (scientific names only)
+      updateSelectInput(session, "species_selection",
+                        choices = available_species,
+                        selected = NULL)
+    } else {
+      # Clear species selection when no region is selected
+      updateSelectInput(session, "species_selection",
+                        choices = NULL,
+                        selected = NULL)
+    }
+  })
+  
+  # Limit species selection to 4
+  observeEvent(input$species_selection, {
+    if (length(input$species_selection) > 4) {
+      updateSelectInput(session, "species_selection",
+                        selected = input$species_selection[1:4])
+    }
+  })
+  
+  # Get comparison data for selected species and region
+  comparisonData <- reactive({
+    req(input$region2)
+    req(length(input$species_selection) > 0)
+    
+    # Get plot data for selected species and region
+    comparison_data <- plot_data %>%
+      filter(species %in% input$species_selection, 
+             region == input$region2)
+    
+    return(comparison_data)
+  })
+  
+  # Combined trends plot
+  output$combined_trends_plot <- renderPlot({
+    data <- comparisonData()
+    
+    if (nrow(data) == 0) {
+      return(ggplot() + 
+               annotate("text", x = 0.5, y = 0.5, label = "No data available for selected species and region") +
+               theme_void())
+    }
+    
+    # Define colors for up to 4 species
+    colors <- c("#1f77b4", "#ff7f0e", "#2ca02c", "#d62728")
+    
+    ggplot(data, aes(x = year, y = pred, color = species, fill = species)) +
+      geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2, color = NA) +
+      geom_line(linewidth = 1, alpha = 0.8) +
+      scale_color_manual(values = colors) +
+      scale_fill_manual(values = colors) +
+      labs(title = paste("Population Trends in", input$region2),
+           x = "Year", 
+           y = "Expected Trend",
+           color = "Species",
+           fill = "Species") +
+      theme_classic() +
+      theme(plot.title = element_text(size = 14, hjust = 0.5),
+            legend.position = "bottom",
+            legend.title = element_text(size = 12),
+            legend.text = element_text(size = 10)) +
+      guides(color = guide_legend(override.aes = list(alpha = 1)),
+             fill = guide_legend(override.aes = list(alpha = 0.3)))
+  })
+  
+  # Separate plots
+  output$separate_plots <- renderUI({
+    data <- comparisonData()
+    
+    if (nrow(data) == 0) {
+      return(div("No data available for selected species and region"))
+    }
+    
+    # Create individual plots for each species
+    species_list <- unique(data$species)
+    colors <- c("#1f77b4", "#ff7f0e", "#2ca02c", "#d62728")
+    
+    # Calculate height based on number of species (minimum 400px for 1 species, add 200px for each additional)
+    total_height <- max(400, 200 * length(species_list))
+    
+    plot_outputs <- lapply(seq_along(species_list), function(i) {
+      species <- species_list[i]
+      output_id <- paste0("species_plot_", i)
+      
+      output[[output_id]] <- renderPlot({
+        species_data <- data %>% filter(species == !!species)
+        
+        ggplot(species_data, aes(x = year, y = pred)) +
+          geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.3, fill = colors[i]) +
+          geom_line(linewidth = 1, alpha = 0.8, color = colors[i]) +
+          labs(title = paste(species, "in", input$region2),
+               x = "Year", 
+               y = "Expected Trend") +
+          theme_classic() +
+          theme(plot.title = element_text(size = 12, hjust = 0.5))
+      }, height = 180)
+      
+      plotOutput(output_id, height = "180px")
+    })
+    
+    do.call(tagList, plot_outputs)
+  })
   
 }
 
