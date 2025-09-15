@@ -26,8 +26,9 @@ trend_data <- calculate_trends(plot_data)
 regions <- readRDS("data/processed/bcr_simplified.rds")
 
 
-# Load the bird species information we collected
+# Load the bird species and bcr information we collected
 bird_species_info <- readRDS("data/bird_species_info.rds")
+bcr_info <- readRDS("data/processed/bcr_info_text.rds")
 
 
 
@@ -113,6 +114,14 @@ ui <- fillPage(theme = shinytheme("flatly"), navset_tab(
                               uiOutput("separate_plots")
                             )
                           )
+            ),
+            conditionalPanel(
+              condition = "input.region2 != ''",
+              absolutePanel(id = "bcr_info_panel", class = "panel panel-default",
+                            top = 75, right = 55, width = 380, fixed = TRUE,
+                            draggable = TRUE, height = "auto",
+                            uiOutput("bcr_info_map_panel")
+              )
             )
   ), 
 ), 
@@ -661,6 +670,52 @@ server <- function(input, output, session) {
     })
     
     do.call(tagList, plot_outputs)
+  })
+  
+  # Get current region info
+  current_region_info <- reactive({
+    req(input$region2)
+    number_only <- gsub("[^0-9]", "", input$region2)
+    print(number_only)
+    bcr_info %>%
+      filter(bcr_number == number_only)
+  })
+  
+  # Display region info 
+  output$bcr_info_map_panel <- renderUI({
+    bcr_info <- current_region_info()
+    
+    if (nrow(bcr_info) == 0) return(div("No region selected"))
+    
+    div(
+      # Header with species names
+      div(
+        style = "padding: 10px; margin-bottom: 15px; text-align: center;",
+        h4(bcr_info$bcr_name, 
+           style = "color: #2E8B57; margin: 0; font-size: 16px; font-weight: bold;"),
+        #p(em(ifelse(is.na(species_info$scientific_name_display) | species_info$scientific_name_display == "", 
+        #            species_info$scientific_name, 
+        #            species_info$scientific_name_display)), 
+        #  style = "color: #666; margin: 5px 0; font-size: 13px;")
+      ),
+      
+      # Description
+      if (!is.na(bcr_info$bcr_description)) {
+        div(
+          class = "bcr-description",
+          style = "padding: 10px; background: #f8f9fa; border-radius: 5px; border-left: 3px solid #2E8B57;",
+          p(bcr_info$bcr_description, 
+            style = "margin: 0; color: #333; font-size: 14px;"),
+          p(em("Source: North American Bird Conservation Initiative"), 
+            style = "font-size: 11px; color: #666; margin-top: 8px; margin-bottom: 0;")
+        )
+      } else {
+        div(
+          style = "padding: 10px; background: #f8f9fa; border-radius: 5px; color: #666; font-style: italic;",
+          p("Description not available", style = "margin: 0; font-size: 13px;")
+        )
+      }
+    )
   })
   
 }
