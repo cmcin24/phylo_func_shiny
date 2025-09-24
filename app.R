@@ -25,11 +25,9 @@ trend_data <- calculate_trends(plot_data)
 
 regions <- readRDS("data/processed/bcr_simplified.rds")
 
-
 # Load the bird species and bcr information we collected
 bird_species_info <- readRDS("data/bird_species_info.rds")
 bcr_info <- readRDS("data/processed/bcr_info_text.rds")
-
 
 
 # Define UI for application
@@ -55,13 +53,12 @@ ui <- fillPage(theme = shinytheme("flatly"), navset_tab(
             conditionalPanel(
               condition = "input.select != ''",
               absolutePanel(id = "species_info_panel", class = "panel panel-default",
-                            top = 75, right = 55, width = 320, fixed = TRUE,
+                            top = 75, right = 55, width = 340, fixed = TRUE,
                             draggable = TRUE, height = "auto",
                             uiOutput("species_info_map_panel")
               )
             )
   ),
-  nav_panel("Tree", "Content"),
   nav_panel("Species Information", 
             fluidRow(
               column(8, style = "padding: 30px;",
@@ -124,6 +121,332 @@ ui <- fillPage(theme = shinytheme("flatly"), navset_tab(
               )
             )
   ), 
+  
+  nav_panel("Methods & Data",
+            tags$style(type = "text/css", 
+                       ".methods-content {padding: 30px; max-width: 1200px; margin: 0 auto; height: calc(100vh - 120px); overflow-y: auto;}",
+                       ".section-header {color: #2E8B57; border-bottom: 2px solid #2E8B57; padding-bottom: 10px; margin-bottom: 20px;}",
+                       ".highlight-box {background: #f8f9fa; border-left: 4px solid #2E8B57; padding: 15px; margin: 15px 0; border-radius: 5px;}",
+                       ".code-box {background: #f4f4f4; border: 1px solid #ddd; padding: 15px; border-radius: 5px; font-family: 'Courier New', monospace; font-size: 12px; overflow-x: auto;}"),
+            div(class = "methods-content",
+                h1("Modeling Methodology & Dataset Information", style = "text-align: center; color: #2E8B57; margin-bottom: 40px;"),
+                
+                # BBS Dataset Section
+                div(
+                  h2("North American Breeding Bird Survey (BBS)", class = "section-header"),
+                  
+                  div(class = "highlight-box",
+                      h4("Dataset Overview", style = "color: #2E8B57; margin-top: 0;"),
+                      p("The North American Breeding Bird Survey (BBS) is a cooperative effort between the U.S. Geological Survey and Environment and Climate Change Canada to monitor the status and trends of North American bird populations. Since 1966, the BBS has provided the scientific foundation for hundreds of conservation decisions and policies."),
+                      
+                      h5("Key Features:", style = "color: #2E8B57;"),
+                      tags$ul(
+                        tags$li("Long-term dataset spanning over 50 years (1966-present)"),
+                        tags$li("Continental scale coverage across North America"),
+                        tags$li("Standardized methodology ensuring data consistency"),
+                        tags$li("Annual surveys conducted during peak breeding season (May-July)"),
+                        tags$li("Over 4,000 survey routes across the continent")
+                      )
+                  ),
+                  
+                  h4("Survey Methodology"),
+                  p("Each BBS route is 24.5 miles long with 50 stops spaced 0.5 miles apart. At each stop, trained observers conduct a 3-minute point count, recording all birds seen or heard within a 0.25-mile radius. Routes are surveyed once per year during peak breeding season, typically starting one-half hour before sunrise."),
+                  
+                  h4("Bird Conservation Regions (BCRs)"),
+                  p("The analysis is organized by Bird Conservation Regions, which are ecologically distinct areas with similar bird communities, habitats, and resource management issues. BCRs provide a biologically meaningful framework for analyzing population trends across North America's diverse landscapes."),
+                  
+                  div(class = "highlight-box",
+                      h5("Data Processing:", style = "color: #2E8B57; margin-top: 0;"),
+                      tags$ul(
+                        tags$li("Routes with adequate sampling effort and data quality"),
+                        tags$li("Species-region combinations with sufficient data for trend estimation"),
+                        tags$li("Standardization for observer effects and survey conditions"),
+                        tags$li("Integration across multiple spatial and temporal scales")
+                      )
+                  )
+                ),
+                
+                # GAM Modeling Section
+                div(
+                  h2("Generalized Additive Model (GAM) Approach", class = "section-header"),
+                  
+                  div(class = "highlight-box",
+                      h4("Why GAMs for Bird Population Trends?", style = "color: #2E8B57; margin-top: 0;"),
+                      p("Generalized Additive Models are particularly well-suited for analyzing bird population trends because they:"),
+                      tags$ul(
+                        tags$li("Handle non-linear temporal patterns without assuming specific functional forms"),
+                        tags$li("Incorporate spatial correlation across regions"),
+                        tags$li("Account for phylogenetic relationships among species"),
+                        tags$li("Provide uncertainty quantification for trend estimates"),
+                        tags$li("Scale efficiently to large, complex datasets")
+                      )
+                  ),
+                  
+                  h4("Model Architecture"),
+                  p("Our modeling approach uses a hierarchical GAM framework that decomposes population trends into multiple components:"),
+                  
+                  div(class = "code-box",
+                      "count ~ s(year) + ti(year, region) + ti(year, species_phylo) + \n",
+                      "        ti(year, species) + ti(year, region, species_phylo) + \n",
+                      "        ti(year, region, species) + offset(log(n_routes))"
+                  ),
+                  
+                  h5("Model Components:", style = "color: #2E8B57;"),
+                  tags$ul(
+                    tags$li(strong("Temporal smooth (s(year)):"), " Overall continental trend pattern"),
+                    tags$li(strong("Spatiotemporal effects (ti(year, region)):"), " Region-specific deviations from continental trend"),
+                    tags$li(strong("Phylogenetic effects (ti(year, species_phylo)):"), " Shared trends among related species"),
+                    tags$li(strong("Species-specific effects (ti(year, species)):"), " Individual species deviations"),
+                    tags$li(strong("Higher-order interactions:"), " Species-specific spatiotemporal patterns informed by phylogeny"),
+                    tags$li(strong("Survey effort offset:"), " Accounts for variation in sampling intensity")
+                  ),
+                  
+                  h4("Advanced Features"),
+                  
+                  h5("Phylogenetic Information", style = "color: #2E8B57;"),
+                  p("The model incorporates evolutionary relationships through Markov Random Field (MRF) smooths based on phylogenetic distance. This allows closely related species to share information, improving trend estimates for rare species while respecting evolutionary constraints."),
+                  
+                  h5("Spatial Correlation", style = "color: #2E8B57;"),
+                  p("Spatial relationships among Bird Conservation Regions are modeled using neighborhood-based MRF smooths, ensuring that geographically adjacent regions with similar ecological conditions share information appropriately."),
+                  
+                  div(class = "highlight-box",
+                      h5("Model Fitting Details:", style = "color: #2E8B57; margin-top: 0;"),
+                      tags$ul(
+                        tags$li("Fast Restricted Maximum Likelihood (fREML) estimation"),
+                        tags$li("Automatic smoothness selection via generalized cross-validation"),
+                        tags$li("Bayesian posterior simulation for uncertainty quantification"),
+                        tags$li("10% holdout validation set for model assessment"),
+                        tags$li("Computational efficiency through discrete fitting methods")
+                      )
+                  )
+                ),
+                
+                # Trend Interpretation Section
+                div(
+                  h2("Trend Interpretation", class = "section-header"),
+                  
+                  h4("Expected vs. Observed Trends"),
+                  p("The visualizations show 'expected trends' which represent the model's estimate of what population changes would have occurred with standardized survey effort across all years. This approach:"),
+                  tags$ul(
+                    tags$li("Controls for changes in the number of survey routes over time"),
+                    tags$li("Provides more interpretable relative population changes"),
+                    tags$li("Enables fair comparison across regions and species"),
+                    tags$li("Reduces confounding between survey effort and true population changes")
+                  ),
+                  
+                  h4("Uncertainty Visualization"),
+                  p("Confidence ribbons around trend lines represent 95% credible intervals from the model's posterior distribution. Wider ribbons indicate greater uncertainty, typically occurring for:"),
+                  tags$ul(
+                    tags$li("Species or regions with limited data"),
+                    tags$li("Time periods with high environmental variability"),
+                    tags$li("Beginning and end of time series (edge effects)"),
+                    tags$li("Species undergoing rapid population changes")
+                  ),
+                  
+                  div(class = "highlight-box",
+                      h5("Trend Categories:", style = "color: #2E8B57; margin-top: 0;"),
+                      tags$ul(
+                        tags$li(strong("Strong Increase:"), " Substantial upward trend with high confidence"),
+                        tags$li(strong("Moderate Increase:"), " Positive trend with moderate confidence"),  
+                        tags$li(strong("Stable:"), " No significant directional change"),
+                        tags$li(strong("Moderate Decrease:"), " Negative trend with moderate confidence"),
+                        tags$li(strong("Strong Decrease:"), " Substantial downward trend with high confidence"),
+                        tags$li(strong("No Data:"), " Insufficient data for reliable trend estimation")
+                      )
+                  )
+                ),
+                
+                # Applications and Limitations
+                div(
+                  h2("Applications & Limitations", class = "section-header"),
+                  
+                  h4("Conservation Applications"),
+                  tags$ul(
+                    tags$li("Identifying species and regions of conservation concern"),
+                    tags$li("Tracking progress toward conservation targets"),
+                    tags$li("Informing habitat management decisions"),
+                    tags$li("Supporting policy development and resource allocation"),
+                    tags$li("Detecting early warning signals of population declines")
+                  ),
+                  
+                  h4("Model Limitations"),
+                  div(class = "highlight-box",
+                      tags$ul(style = "margin: 0;",
+                              tags$li("Trends reflect breeding populations along roadsides, not total populations"),
+                              tags$li("Species detectability may vary across regions and time"),
+                              tags$li("Limited coverage in remote areas and certain habitat types"),
+                              tags$li("Potential biases from observer effects and route accessibility"),
+                              tags$li("Causal interpretation requires additional ecological context")
+                      )
+                  )
+                ),
+                
+                # References
+                div(
+                  h2("References & Data Sources", class = "section-header"),
+                  
+                  h4("Primary Data Source"),
+                  p("Pardieck, K.L., D.J. Ziolkowski Jr., M. Lutmerding, V.I. Aponte, and M.-A.R. Hudson. 2020. North American Breeding Bird Survey Dataset 1966-2019, version 2019.0. U.S. Geological Survey, Patuxent Wildlife Research Center."),
+                  
+                  h4("Methodological References"),
+                  tags$ul(
+                    tags$li("Wood, S.N. (2017). Generalized Additive Models: An Introduction with R, Second Edition. CRC Press."),
+                    tags$li("Sauer, J.R. et al. (2017). The first 50 years of the North American Breeding Bird Survey. The Condor 119(3): 576-593."),
+                    tags$li("Bird Conservation Regions: North American Bird Conservation Initiative. (2022). The State of Canada's Birds."),
+                    tags$li("Phylogenetic analysis methods based on contemporary phylogenetic reconstruction techniques.")
+                  ),
+                  
+                  div(class = "highlight-box",
+                      p(strong("Data Availability:"), " Raw BBS data are freely available through the USGS Patuxent Wildlife Research Center. This analysis represents a subset of the full BBS dataset, processed and analyzed using advanced statistical methods to provide robust trend estimates.", style = "margin: 0;")
+                  )
+                )
+            )
+  ),
+  
+  nav_panel("Info",
+            tags$style(type = "text/css", 
+                       ".methods-content {padding: 30px; max-width: 900px; margin: 0 auto; height: calc(100vh - 120px); overflow-y: auto;}
+              .section-header {color: #2E8B57; border-bottom: 2px solid #2E8B57; padding-bottom: 10px; margin-bottom: 20px;}
+              .highlight-box {background: #f8f9fa; border-left: 4px solid #2E8B57; padding: 15px; margin: 15px 0; border-radius: 5px;}
+              details summary {
+                background: #e9f5ef;
+                border: 1px solid #2E8B57;
+                border-radius: 5px;
+                padding: 10px;
+                margin: 10px 0;
+                cursor: pointer;
+                font-weight: bold;
+                color: #2E8B57;
+                list-style: none;
+              }
+              details[open] summary {
+                background: #d3efe0;
+              }
+              details summary::before {
+                content: '▶ ';
+                font-size: 0.9em;
+              }
+              details[open] summary::before {
+                content: '▼ ';
+              }"),
+            
+            div(class = "methods-content",
+                
+                h1("How We Studied Bird Populations", 
+                   style = "text-align: center; color: #2E8B57; margin-bottom: 40px;"),
+                
+                # DATA SECTION
+                div(
+                  h2("About the Data", class = "section-header"),
+                  p("The data come from the North American Breeding Bird Survey, 
+           a project running since 1966. Volunteers cover fixed routes each year, 
+           stopping to count all birds they see or hear. 
+           This creates one of the largest and longest-running bird monitoring programs in the world."),
+                  
+                  div(class = "highlight-box",
+                      tags$ul(
+                        tags$li("📅 Over 50 years of data"),
+                        tags$li("🌎 Coverage across North America"),
+                        tags$li("🔁 Same method every year for consistency")
+                      )
+                  ),
+                  
+                  tags$details(
+                    tags$summary("Show technical details"),
+                    p("Each survey route is 24.5 miles long with 50 stops. 
+             At each stop, observers record all birds within 0.25 miles in 3 minutes. 
+             Data are organized by Bird Conservation Regions (BCRs).")
+                  )
+                ),
+                
+                # MODELLING SECTION
+                div(
+                  h2("How We Estimate Trends", class = "section-header"),
+                  p("Bird populations don’t always change in a straight line. 
+           We use a flexible model that captures curved trends over time 
+           and accounts for differences between regions and related species."),
+                  
+                  div(class = "highlight-box",
+                      tags$ul(
+                        tags$li("📊 Detects non-linear (wiggly) trends"),
+                        tags$li("📍 Accounts for regional differences"),
+                        tags$li("🧬 Shares information across related species")
+                      )
+                  ),
+                  
+                  tags$details(
+                    tags$summary("Show technical details"),
+                    p("We use a hierarchical Generalized Additive Model (GAM):"),
+                    tags$pre(
+                      "count ~ s(year) + ti(year, region) + ti(year, species_phylo) + 
+                   ti(year, species) + ti(year, region, species_phylo) + 
+                   ti(year, region, species) + offset(log(n_routes))"
+                    ),
+                    p("The model uses fREML estimation, automatic smoothness selection, 
+             and Bayesian simulation for uncertainty.")
+                  )
+                ),
+                
+                # INTERPRETING RESULTS
+                div(
+                  h2("How to Read the Graphs", class = "section-header"),
+                  p("The solid line shows the estimated population trend. 
+           The shaded ribbon shows uncertainty — wider ribbons mean less certainty."),
+                  
+                  div(class = "highlight-box",
+                      tags$ul(
+                        tags$li("⬆️ Strong Increase – populations rising confidently"),
+                        tags$li("➖ Stable – no significant change"),
+                        tags$li("⬇️ Strong Decrease – clear population decline")
+                      )
+                  ),
+                  
+                  tags$details(
+                    tags$summary("Show technical details"),
+                    p("Trends are standardized for survey effort. 
+             Uncertainty intervals represent 95% credible intervals 
+             from the model’s posterior distribution.")
+                  )
+                ),
+                
+                # APPLICATIONS & LIMITATIONS
+                div(
+                  h2("Applications & Limitations", class = "section-header"),
+                  h4("Why This Matters"),
+                  tags$ul(
+                    tags$li("Identify species and regions needing conservation"),
+                    tags$li("Track progress toward conservation goals"),
+                    tags$li("Provide early warning of population declines")
+                  ),
+                  
+                  h4("Limitations"),
+                  div(class = "highlight-box",
+                      tags$ul(
+                        tags$li("Counts reflect birds along roadsides, not all habitats"),
+                        tags$li("Some species are harder to detect than others"),
+                        tags$li("Remote areas have limited coverage")
+                      )
+                  )
+                ),
+                
+                # REFERENCES
+                div(
+                  h2("Data Access", class = "section-header"),
+                  p("The raw survey data are freely available from the USGS Patuxent Wildlife Research Center. 
+           Our analysis uses a processed subset for more reliable estimates."),
+                  
+                  tags$details(
+                    tags$summary("References"),
+                    tags$ul(
+                      tags$li("Pardieck, K.L. et al. (2020). North American Breeding Bird Survey Dataset 1966-2019."),
+                      tags$li("Wood, S.N. (2017). Generalized Additive Models: An Introduction with R."),
+                      tags$li("Sauer, J.R. et al. (2017). The first 50 years of the North American Breeding Bird Survey.")
+                    )
+                  )
+                )
+            )
+  )
+
 ), 
 
 )
@@ -325,7 +648,7 @@ server <- function(input, output, session) {
           class = "species-description",
           style = "padding: 10px; background: #f8f9fa; border-radius: 5px; border-left: 3px solid #2E8B57;",
           p(species_info$description, 
-            style = "margin: 0; color: #333;"),
+            style = "margin: 0; color: #333; font-size: 14px;"),
           p(em("Source: All About Birds"), 
             style = "font-size: 11px; color: #666; margin-top: 8px; margin-bottom: 0;")
         )
@@ -676,7 +999,6 @@ server <- function(input, output, session) {
   current_region_info <- reactive({
     req(input$region2)
     number_only <- gsub("[^0-9]", "", input$region2)
-    print(number_only)
     bcr_info %>%
       filter(bcr_number == number_only)
   })
