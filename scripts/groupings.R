@@ -8,7 +8,7 @@ library(httr)
 library(readxl)
 
 # =============================================================================
-# 1. DOWNLOAD AND LOAD AVONET DATABASE
+# 1. DOWNLOAD AND LOAD AVONET DATABASE (BOTH SHEETS)
 # =============================================================================
 
 download_avonet_data <- function() {
@@ -31,12 +31,24 @@ download_avonet_data <- function() {
     cat("✓ AVONET data already exists\n")
   }
   
-  # Read and process AVONET data
+  # Read BOTH sheets from AVONET data
   tryCatch({
-    avonet_main <- readxl::read_excel("data/AVONET_Raw_Data.xlsx", sheet = "AVONET1_BirdLife", range = cell_cols("B:AK"))
-    avonet_backup <- readxl::read_excel("data/AVONET_Raw_Data.xlsx", sheet = "AVONET2_eBird")
-    cat("✓ AVONET data loaded:", nrow(avonet), "species\n")
-    return(avonet)
+    cat("Loading AVONET1_BirdLife sheet...\n")
+    avonet_main <- readxl::read_excel("data/AVONET_Raw_Data.xlsx", 
+                                      sheet = "AVONET1_BirdLife",
+                                      range = cell_cols("B:AK"))
+    cat("✓ AVONET1_BirdLife loaded:", nrow(avonet_main), "species\n")
+    
+    cat("Loading AVONET3_BirdTree sheet...\n")
+    avonet_backup <- readxl::read_excel("data/AVONET_Raw_Data.xlsx", 
+                                        sheet = "AVONET3_BirdTree")
+    cat("✓ AVONET3_BirdTree loaded:", nrow(avonet_backup), "species\n")
+    
+    # Return both sheets in a list
+    return(list(
+      main = avonet_main,
+      backup = avonet_backup
+    ))
   }, error = function(e) {
     cat("✗ Error reading AVONET data:", e$message, "\n")
     return(NULL)
@@ -157,12 +169,16 @@ process_pif_data <- function(pif_data) {
 }
 
 # =============================================================================
-# 3. PROCESS AVONET DATA FOR YOUR SPECIES
+# 3. PROCESS AVONET DATA FOR YOUR SPECIES (WITH FALLBACK TO SECOND SHEET)
 # =============================================================================
 
-process_avonet_ecological_data <- function(species_list, avonet, pif_data = NULL) {
+process_avonet_ecological_data <- function(species_list, avonet_data, pif_data = NULL) {
   
   cat("\n=== Processing AVONET Data for Your Species ===\n")
+  
+  # Extract both sheets
+  avonet_main <- avonet_data$main
+  avonet_backup <- avonet_data$backup
   
   # Clean species names for matching
   species_data <- data.frame(
@@ -171,38 +187,135 @@ process_avonet_ecological_data <- function(species_list, avonet, pif_data = NULL
     stringsAsFactors = FALSE
   )
   
-  # Select and rename key AVONET variables
-  avonet_processed <- avonet %>%
-    select(
-      # Taxonomic
-      Species1, Family1, Order1,
-      
-      # Ecological
-      Habitat, `Habitat.Density`, Migration, 
-      `Trophic.Level`, `Trophic.Niche`, `Primary.Lifestyle`,
-      
-      # Morphological  
-      Mass = `Mass`,
-      Wing.Length = `Wing.Length`,
-      Tail.Length = `Tail.Length`,
-      Beak.Length = `Beak.Length_Culmen`,
-      
-      # Geographic
-      Range.Size,
-      Centroid.Latitude = `Centroid.Latitude`,
-      Centroid.Longitude = `Centroid.Longitude`
-    ) %>%
-    rename(
-      species_avonet = Species1,
-      family = Family1,
-      order = Order1
-    )
+  # Function to select and rename key AVONET variables (handles both sheet formats)
+  process_avonet_sheet <- function(avonet_df, sheet_number = 1) {
+    # Determine column names based on sheet number
+    if (sheet_number == 1) {
+      species_col <- "Species1"
+      family_col <- "Family1"
+      order_col <- "Order1"
+    } else {
+      species_col <- "Species3"
+      family_col <- "Family3"
+      order_col <- "Order3"
+    }
+    
+    avonet_df %>%
+      select(
+        # Taxonomic
+        species_raw = !!species_col,
+        family_raw = !!family_col,
+        order_raw = !!order_col,
+        
+        # Ecological
+        Habitat, `Habitat.Density`, Migration, 
+        `Trophic.Level`, `Trophic.Niche`, `Primary.Lifestyle`,
+        
+        # Morphological  
+        Mass = `Mass`,
+        Wing.Length = `Wing.Length`,
+        Tail.Length = `Tail.Length`,
+        Beak.Length = `Beak.Length_Culmen`,
+        
+        # Geographic
+        Range.Size,
+        Centroid.Latitude = `Centroid.Latitude`,
+        Centroid.Longitude = `Centroid.Longitude`
+      ) %>%
+      rename(
+        species_avonet = species_raw,
+        family = family_raw,
+        order = order_raw
+      ) %>%
+      # Standardize column types to avoid bind_rows errors
+      mutate(
+        Habitat = as.character(Habitat),
+        Habitat.Density = as.numeric(Habitat.Density),
+        Migration = as.character(Migration),
+        Trophic.Level = as.character(Trophic.Level),
+        Trophic.Niche = as.character(Trophic.Niche),
+        Primary.Lifestyle = as.character(Primary.Lifestyle),
+        Mass = as.numeric(Mass),
+        Wing.Length = as.numeric(Wing.Length),
+        Tail.Length = as.numeric(Tail.Length),
+        Beak.Length = as.numeric(Beak.Length),
+        Range.Size = as.numeric(Range.Size),
+        Centroid.Latitude = as.numeric(Centroid.Latitude),
+        Centroid.Longitude = as.numeric(Centroid.Longitude)
+      )
+  }
   
-  # Match with your species list
+  # Process both AVONET sheets
+  cat("Processing AVONET1_BirdLife sheet...\n")
+  avonet_main_processed <- process_avonet_sheet(avonet_main, sheet_number = 1)
+  
+  cat("Processing AVONET3_BirdTree sheet...\n")
+  avonet_backup_processed <- process_avonet_sheet(avonet_backup, sheet_number = 3)
+  
+  # First, match with main sheet
   species_data <- species_data %>%
-    left_join(avonet_processed, by = c("species_clean" = "species_avonet"))
+    left_join(avonet_main_processed, by = c("species_clean" = "species_avonet"))
   
-  cat("✓ Matched", sum(!is.na(species_data$family)), "out of", nrow(species_data), "species with AVONET data\n")
+  matched_main <- sum(!is.na(species_data$family))
+  cat("✓ Matched", matched_main, "species from AVONET1_BirdLife\n")
+  
+  # Find species not matched in main sheet
+  unmatched_species <- species_data %>%
+    filter(is.na(family)) %>%
+    select(species, species_clean)
+  
+  if (nrow(unmatched_species) > 0) {
+    cat("Checking AVONET2_eBird for", nrow(unmatched_species), "unmatched species...\n")
+    
+    # Get data from backup sheet for unmatched species
+    backup_matches <- unmatched_species %>%
+      left_join(avonet_backup_processed, by = c("species_clean" = "species_avonet"))
+    
+    # Count how many were found in backup
+    matched_backup <- sum(!is.na(backup_matches$family))
+    
+    if (matched_backup > 0) {
+      cat("✓ Matched", matched_backup, "additional species from AVONET2_eBird\n")
+      
+      # Update the main species_data with backup matches
+      # Remove rows that are still unmatched
+      species_data_matched <- species_data %>%
+        filter(!is.na(family))
+      
+      # Add backup matches
+      species_data <- bind_rows(
+        species_data_matched,
+        backup_matches %>% filter(!is.na(family))
+      )
+      
+      # Add back any species that still weren't matched
+      still_unmatched <- unmatched_species %>%
+        anti_join(backup_matches %>% filter(!is.na(family)), 
+                  by = c("species", "species_clean"))
+      
+      if (nrow(still_unmatched) > 0) {
+        # Add these back with NA values
+        still_unmatched_full <- species_data %>%
+          filter(species %in% still_unmatched$species, is.na(family))
+        
+        species_data <- bind_rows(
+          species_data %>% filter(!is.na(family)),
+          still_unmatched_full
+        )
+      }
+    } else {
+      cat("✗ No additional matches found in AVONET2_eBird\n")
+    }
+  }
+  
+  # Final match count
+  total_matched <- sum(!is.na(species_data$family))
+  cat("\n✓ TOTAL: Matched", total_matched, "out of", nrow(species_data), 
+      "species (", round(100 * total_matched / nrow(species_data), 1), "%)\n")
+  cat("  - From AVONET1_BirdLife:", matched_main, "\n")
+  if (exists("matched_backup") && matched_backup > 0) {
+    cat("  - From AVONET2_eBird:", matched_backup, "\n")
+  }
   
   # Add PIF conservation data if available
   if (!is.null(pif_data)) {
@@ -221,7 +334,7 @@ process_avonet_ecological_data <- function(species_list, avonet, pif_data = NULL
   # Show unmatched species
   unmatched <- species_data %>% filter(is.na(family))
   if (nrow(unmatched) > 0) {
-    cat("\n⚠ Unmatched species (", nrow(unmatched), "):\n")
+    cat("\n⚠ Still unmatched species (", nrow(unmatched), "):\n")
     print(head(unmatched$species, 10))
     if (nrow(unmatched) > 10) cat("... and", nrow(unmatched) - 10, "more\n")
   }
@@ -462,9 +575,9 @@ main <- function() {
     dir.create("data", recursive = TRUE)
   }
   
-  # Step 1: Download and load AVONET
-  avonet <- download_avonet_data()
-  if (is.null(avonet)) {
+  # Step 1: Download and load AVONET (both sheets)
+  avonet_data <- download_avonet_data()
+  if (is.null(avonet_data)) {
     stop("Failed to load AVONET data. Please download manually.")
   }
   
@@ -479,12 +592,12 @@ main <- function() {
   }
   
   # Step 3: Load your species list
-  model_data <- load("data/processed/model_objects.rda")
+  load("data/processed/model_objects.rda")
   
   unique_species <- unique(mod_data$sp_latin)
   
-  # Step 4: Match your species with AVONET and PIF data
-  species_data <- process_avonet_ecological_data(unique_species, avonet, pif_data)
+  # Step 4: Match your species with AVONET (both sheets) and PIF data
+  species_data <- process_avonet_ecological_data(unique_species, avonet_data, pif_data)
   
   # Step 5: Create standardized categories
   species_data <- create_standardized_categories(species_data)
@@ -554,10 +667,12 @@ cat("   - Save as: data/pif_species_assessment.csv\n\n")
 cat("2. Run: species_data <- main()\n")
 cat("   This will:\n")
 cat("   - Download AVONET database (if not already downloaded)\n")
+cat("   - Load BOTH AVONET sheets (BirdLife and eBird)\n")
+cat("   - Use BirdLife sheet first, then eBird as fallback\n")
 cat("   - Load PIF conservation data (if available)\n")
 cat("   - Match your species with ecological data\n")
 cat("   - Create standardized grouping categories\n")
 cat("   - Save results to data/ folder\n\n")
 
 # Uncomment to run automatically:
-species_data <- main()
+# species_data <- main()
