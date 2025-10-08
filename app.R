@@ -17,17 +17,63 @@ library(shinythemes)
 # source some functions
 source("./R/functions.R")
 
-# Load data objects
-plot_data <- readRDS("./tests/plot_data_allBCR.rds")
-
 # Calculate trends for all species-region combinations
 trend_data <- calculate_trends(plot_data)
 
-regions <- readRDS("data/processed/bcr_simplified.rds")
-
-# Load the bird species and bcr information we collected
+# Load data objects
 bird_species_info <- readRDS("data/bird_species_info.rds")
-bcr_info <- readRDS("data/processed/bcr_info_text.rds")
+bcr_info <- readRDS("data/processed/bcr_info_text_short.rds")
+family_data <- readRDS("data/bird_family_data.rds")
+regions <- readRDS("data/processed/bcr_simplified.rds")
+plot_data <- readRDS("data/processed/plot_data.rds")
+load("data/processed/model_objects.rda")
+
+# Load ecological data
+species_ecological_data <- readRDS("data/species_ecological_avonet_pif.rds")
+grouping_choices <- readRDS("data/grouping_choices_avonet_pif.rds")
+
+# Create a list of grouping types for the UI
+grouping_types <- names(grouping_choices)
+
+# List of all species and regions available
+species_list <- unique(mod_data$sp_latin)
+region_list <- unique(mod_data$strata_name)         
+
+# Function to calculate weighted average trends by ecological group
+calculate_group_trends <- function(selected_region, selected_group, group_column) {
+  # Get species in the selected group
+  group_species <- species_ecological_data %>%
+    filter(!!sym(group_column) == selected_group) %>%
+    pull(species)
+  
+  # Join trend data with count data
+  group_count_data <- plot_data %>%
+    left_join(mod_data, by = c("species"="sp_latin", "region"="strata_name","year")
+    )
+  
+  # Get plot data for these species in the selected region
+  group_plot_data <- group_count_data %>%
+    filter(species %in% group_species, region == selected_region)
+  
+  if (nrow(group_plot_data) == 0) {
+    return(data.frame())
+  }
+  
+  # Calculate weighted average by year
+  group_trend <- group_plot_data %>%
+    group_by(year) %>%
+    summarise(
+      pred  = weighted.mean(pred,  w = count, na.rm = TRUE),
+      lower = weighted.mean(lower, w = count, na.rm = TRUE),
+      upper = weighted.mean(upper, w = count, na.rm = TRUE),
+      n_species   = n_distinct(species),
+      total_count = sum(count, na.rm = TRUE),
+      .groups = 'drop'
+    )
+  
+  return(group_trend)
+}
+
 
 
 # Define UI for application
@@ -41,21 +87,45 @@ ui <- fillPage(theme = shinytheme("flatly"), navset_tab(
                        "#species_info_panel img {max-width: 200px; max-height: 150px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.15);}",
                        "#species_info_panel .species-description {max-height: 300px; overflow-y: auto; font-size: 13px; line-height: 1.4;}"),
             leafletOutput("map"),
+            # In your UI, replace the controls absolutePanel with this:
             absolutePanel(id = "controls", class = "panel panel-default",
                           top = 75, left = 55, width = 270, fixed=TRUE,
-                          draggable = TRUE, height = 400,
-                          selectInput("select", "Choose species:", c("", "Polioptila_caerulea", "Chordeiles_minor", "Anas_platyrhynchos", "Columba_livia", "Vireo_gilvus", "Falco_sparverius", "Dryocopus_pileatus", "Hirundo_rustica", "Sturnella_neglecta", "Geothlypis_trichas")),
-                          selectInput("region", "Choose region:", c("", "BCR2", "BCR4", "BCR5", "BCR6", "BCR8", "BCR9", "BCR10", "BCR11", "BCR12", "BCR13", "BCR14", "BCR15",
-                                                                    "BCR16", "BCR17", "BCR18", "BCR19", "BCR20", "BCR21", "BCR22", "BCR23", "BCR24",
-                                                                    "BCR25", "BCR26", "BCR27", "BCR28", "BCR29", "BCR30", "BCR31", "BCR32", "BCR33", "BCR34", "BCR35", "BCR36", "BCR37")),
+                          draggable = TRUE, height = 550,
+                          
+                          # Add radio buttons for selection type (UPDATED)
+                          radioButtons("selection_type", "Analysis Type:",
+                                       choices = list("Individual Species" = "species",
+                                                      "Species Group" = "group"),
+                                       selected = "species"),
+                          
+                          # Species selection (show when individual species selected)
+                          conditionalPanel(
+                            condition = "input.selection_type == 'species'",
+                            selectInput("select", "Choose species:", 
+                                        choices = species_list)
+                          ),
+                          
+                          # Group selection (show when group selected)
+                          conditionalPanel(
+                            condition = "input.selection_type == 'group'",
+                            selectInput("grouping_type", "Group by:",
+                                        choices = c("", grouping_types),
+                                        selected = ""),
+                            conditionalPanel(
+                              condition = "input.grouping_type != ''",
+                              uiOutput("group_selector")
+                            )
+                          ),
+                          
+                          selectInput("region", "Choose region:", choices = region_list),
                           plotOutput("plot")
-            ), 
+            ),
             conditionalPanel(
-              condition = "input.select != ''",
+              condition = "(input.selection_type == 'species' && input.select != '') || (input.selection_type == 'group' && input.grouping_type != '' && input.selected_group != '')",
               absolutePanel(id = "species_info_panel", class = "panel panel-default",
                             top = 75, right = 55, width = 340, fixed = TRUE,
                             draggable = TRUE, height = "auto",
-                            uiOutput("species_info_map_panel")
+                            uiOutput("info_panel")
               )
             )
   ),
@@ -453,14 +523,42 @@ ui <- fillPage(theme = shinytheme("flatly"), navset_tab(
 
 # Define server logic
 server <- function(input, output, session) {
-  # Load data for plots
+  # Dynamic UI for group selection
+  output$group_selector <- renderUI({
+    req(input$grouping_type)
+    
+    # Get choices for the selected grouping type
+    choices <- grouping_choices[[input$grouping_type]]$choices
+    
+    selectInput("selected_group", 
+                paste("Choose", tolower(input$grouping_type), ":"),
+                choices = c("", names(choices)),
+                selected = "")
+  })
+  
+  # Load data for plots - handles both species and group selection
   plotDataInput <- reactive({
-    req(input$select)
     req(input$region)
-    selected_species <- input$select
-    selected_region <- input$region
-    d <- plot_data %>%
-      filter(species == selected_species, region == selected_region)
+    
+    if (input$selection_type == "species") {
+      req(input$grouping_type)
+      req(input$selected_group, input$selected_group != "")
+      d <- plot_data %>%
+        filter(species == input$select, region == input$region)
+      
+    } else if (input$selection_type == "group") {
+      req(input$grouping_type, input$selected_group)
+      
+      # Get the column name for this grouping type
+      group_column <- grouping_choices[[input$grouping_type]]$column
+      
+      # Get the actual value (remove the species count from the display name)
+      group_value <- grouping_choices[[input$grouping_type]]$choices[[input$selected_group]]
+      
+      d <- calculate_group_trends(input$region, group_value, group_column) 
+    }
+    
+    return(d)
   })
   
   # Get current species info
@@ -472,17 +570,61 @@ server <- function(input, output, session) {
   
   # Prepare trend data for the selected species
   speciesTrendMapData <- reactive({
-    req(input$select)
+    if (input$selection_type == "species") {
+      req(input$select)
+      
+      # Get trend data for selected species
+      species_trends <- trend_data %>%
+        filter(species == input$select)
+      
+      # Join species data with spatial data
+      map_data <- regions %>%
+        left_join(species_trends, by = c("BCR_clean" = "region"))
+      
+      return(map_data)
+      
+    } else if (input$selection_type == "group") {
+      req(input$grouping_type, input$selected_group)
+      
+      # Get the column name and value for this grouping
+      group_column <- grouping_choices[[input$grouping_type]]$column
+      group_value <- grouping_choices[[input$grouping_type]]$choices[[input$selected_group]]
+      
+      # Get species in this group
+      group_species <- species_ecological_data %>%
+        filter(!!sym(group_column) == group_value) %>%
+        pull(species)
+      
+      # Calculate average trends for each region
+      group_trends <- trend_data %>%
+        filter(species %in% group_species) %>%
+        group_by(region) %>%
+        summarise(
+          slope = mean(slope, na.rm = TRUE),
+          p_value = mean(p_value, na.rm = TRUE),
+          n_species = n_distinct(species),
+          .groups = 'drop'
+        ) %>%
+        mutate(
+          trend_category = case_when(
+            is.na(slope) ~ "No Data",
+            abs(slope) < 0.001 ~ "Stable",
+            slope >= 0.001 & slope < 0.005 ~ "Moderate Increase",
+            slope >= 0.005 ~ "Strong Increase",
+            slope <= -0.001 & slope > -0.005 ~ "Moderate Decrease",
+            slope <= -0.005 ~ "Strong Decrease",
+            TRUE ~ "Stable"
+          )
+        )
+      
+      # Join with spatial data
+      map_data <- regions %>%
+        left_join(group_trends, by = c("BCR_clean" = "region"))
+      
+      return(map_data)
+    }
     
-    # Get trend data for selected species
-    species_trends <- trend_data %>%
-      filter(species == input$select)
-    
-    # Join species data with spatial data
-    map_data <- regions %>%
-      left_join(species_trends, by = c("BCR_clean" = "region"))
-    
-    return(map_data)
+    return(NULL)
   })
   
   output$map <- renderLeaflet({
@@ -492,94 +634,104 @@ server <- function(input, output, session) {
   })
   
   
-  # Update map colors when data changes
+  # Update map colors when data changes (for both species and groups)
   observe({
-    data <- speciesTrendMapData()
-    
-    # Get all available slope data (remove p-value filtering)
-    available_data <- data %>%
-      filter(!is.na(slope))
-    
-    # Calculate symmetric range around zero for relative scaling
-    max_abs_slope <- max(abs(available_data$slope), na.rm = TRUE)
-    
-    # Create custom color mapping function based on slope values only
-    get_color <- function(slope, trend_category) {
-      # Handle missing data first
-      if (is.na(slope) || is.na(trend_category)) return("#F4F4F4")  # No Data - Very Light Gray
+    if ((input$selection_type == "species" && !is.null(input$select) && input$select != "") ||
+        (input$selection_type == "group" && !is.null(input$grouping_type) && input$grouping_type != "" &&
+         !is.null(input$selected_group) && input$selected_group != "")) {
       
-      # Handle stable trends (very small slopes)
-      if (trend_category == "Stable") return("#D3D3D3")  # Stable - Light Gray
+      data <- speciesTrendMapData()
       
-      # For all other trends, color based on relative magnitude
-      if (max_abs_slope > 0) {
-        slope_intensity <- abs(slope) / max_abs_slope  # Scale from 0 to 1
+      if (is.null(data)) return()
+      
+      # Get all available slope data
+      available_data <- data %>%
+        filter(!is.na(slope))
+      
+      # Calculate symmetric range around zero for relative scaling
+      max_abs_slope <- max(abs(available_data$slope), na.rm = TRUE)
+      
+      # Create custom color mapping function
+      get_color <- function(slope, trend_category) {
+        if (is.na(slope) || is.na(trend_category)) return("#F4F4F4")
+        if (trend_category == "Stable") return("#D3D3D3")
         
-        if (slope > 0) {
-          # Increasing: Light Green to Dark Green
-          if (slope_intensity <= 0.5) {
-            return("#b6d7a8")  # Light Green
+        if (max_abs_slope > 0) {
+          slope_intensity <- abs(slope) / max_abs_slope
+          
+          if (slope > 0) {
+            if (slope_intensity <= 0.5) {
+              return("#b6d7a8")
+            } else {
+              return("#006600")
+            }
           } else {
-            return("#006600")  # Dark Green
-          }
-        } else {
-          # Decreasing: Light Red to Dark Red  
-          if (slope_intensity <= 0.5) {
-            return("#ea9999")  # Light Red
-          } else {
-            return("#CC0000")  # Dark Red
+            if (slope_intensity <= 0.5) {
+              return("#ea9999")
+            } else {
+              return("#CC0000")
+            }
           }
         }
+        
+        return("#F4F4F4")
       }
       
-      return("#F4F4F4")  # Default fallback
-    }
-    
-    # Apply colors to data
-    data$map_color <- mapply(get_color, data$slope, data$trend_category)
-    
-
-    # Create popup content
-    popup_content <- paste0(
-      "<strong>Region:</strong> ", data$BCR_clean, "<br>",
-      "<strong>Species:</strong> ", gsub("_", " ", input$select), "<br>",
-      "<strong>Trend:</strong> ", ifelse(is.na(data$trend_category), "No Data", data$trend_category), "<br>",
-      "<strong>Slope:</strong> ", round(data$slope, 4)
-    )
-    
-    # Update polygons using leafletProxy
-    leafletProxy("map", data = data) %>%
-      clearShapes() %>%
-      addPolygons(
-        layerId = ~BCR_clean,
-        fillColor = ~map_color,
-        color = "white",
-        weight = 1,
-        opacity = 1,
-        fillOpacity = 0.8,
-        popup = popup_content,
-        label = ~BCR_clean,
-        labelOptions = labelOptions(
-          style = list("font-weight" = "normal", "padding" = "3px 8px"),
-          textsize = "13px",
-          direction = "auto"
-        ),
-        highlightOptions = highlightOptions(
-          weight = 3,
-          color = "black",
-          fillOpacity = 0.9,
-          bringToFront = TRUE
+      # Apply colors to data
+      data$map_color <- mapply(get_color, data$slope, data$trend_category)
+      
+      # Create popup content based on selection type
+      if (input$selection_type == "species") {
+        popup_content <- paste0(
+          "<strong>Region:</strong> ", data$BCR_clean, "<br>",
+          "<strong>Species:</strong> ", gsub("_", " ", input$select), "<br>",
+          "<strong>Trend:</strong> ", ifelse(is.na(data$trend_category), "No Data", data$trend_category), "<br>",
+          "<strong>Slope:</strong> ", round(data$slope, 4)
         )
-      ) %>%
-      clearControls() %>%
-      addLegend(
-        colors = c("#006600", "#b6d7a8", "#D3D3D3", "#ea9999", "#CC0000", "#F4F4F4"),
-        labels = c("Strong Increase", "Moderate Increase", "Stable", "Moderate Decrease", "Strong Decrease", "No Data"),
-        title = "Population Trend",
-        position = "bottomright",
-        opacity = 0.8,
-        layerId = "trend_legend"
-      )
+      } else {
+        popup_content <- paste0(
+          "<strong>Region:</strong> ", data$BCR_clean, "<br>",
+          "<strong>Group:</strong> ", input$grouping_type, " - ", input$selected_group, "<br>",
+          "<strong>Species in group:</strong> ", ifelse(is.na(data$n_species), "0", data$n_species), "<br>",
+          "<strong>Trend:</strong> ", ifelse(is.na(data$trend_category), "No Data", data$trend_category), "<br>",
+          "<strong>Avg Slope:</strong> ", round(data$slope, 4)
+        )
+      }
+      
+      # Update polygons
+      leafletProxy("map", data = data) %>%
+        clearShapes() %>%
+        addPolygons(
+          layerId = ~BCR_clean,
+          fillColor = ~map_color,
+          color = "white",
+          weight = 1,
+          opacity = 1,
+          fillOpacity = 0.8,
+          popup = popup_content,
+          label = ~BCR_clean,
+          labelOptions = labelOptions(
+            style = list("font-weight" = "normal", "padding" = "3px 8px"),
+            textsize = "13px",
+            direction = "auto"
+          ),
+          highlightOptions = highlightOptions(
+            weight = 3,
+            color = "black",
+            fillOpacity = 0.9,
+            bringToFront = TRUE
+          )
+        ) %>%
+        clearControls() %>%
+        addLegend(
+          colors = c("#006600", "#b6d7a8", "#D3D3D3", "#ea9999", "#CC0000", "#F4F4F4"),
+          labels = c("Strong Increase", "Moderate Increase", "Stable", "Moderate Decrease", "Strong Decrease", "No Data"),
+          title = "Population Trend",
+          position = "bottomright",
+          opacity = 0.8,
+          layerId = "trend_legend"
+        )
+    }
   })
   
   output$plot <- renderPlot({
@@ -591,10 +743,17 @@ server <- function(input, output, session) {
                theme_void())
     }
     
+    # Create appropriate title based on selection type
+    if (input$selection_type == "species") {
+      plot_title <- paste("Expected Trend for", gsub("_", " ", input$select))
+    } else if (input$selection_type == "group") {
+      plot_title <- paste(input$grouping_type, ":", input$selected_group)
+    }
+    
     ggplot(data, aes(x = year, y = pred)) +
       geom_line(linewidth = 1, alpha = 0.8, color = "darkblue") +
       geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.3, fill = "lightblue") +
-      labs(title = paste("Expected Trend for", gsub("_", " ", input$select)),
+      labs(title = plot_title,
            x = "Year", y = "Expected Trend") +
       theme_classic() +
       theme(plot.title = element_text(size = 10))
@@ -611,54 +770,112 @@ server <- function(input, output, session) {
     }
   })
   
-  output$species_info_map_panel <- renderUI({
-    species_info <- current_species_info()
-    
-    if (nrow(species_info) == 0) return(div("No species selected"))
-    
-    div(
-      # Header with species names
-      div(
-        style = "margin-bottom: 15px; text-align: center;",
-        h4(species_info$common_name, 
-           style = "color: #2E8B57; margin: 0; font-size: 16px; font-weight: bold;"),
-        p(em(ifelse(is.na(species_info$scientific_name_display) | species_info$scientific_name_display == "", 
-                    species_info$scientific_name, 
-                    species_info$scientific_name_display)), 
-          style = "color: #666; margin: 5px 0; font-size: 13px;")
-      ),
+  output$info_panel <- renderUI({
+    if (input$selection_type == "species") {
+      # Existing species info code
+      species_info <- current_species_info()
       
-      # Image
+      if (nrow(species_info) == 0) return(div("No species selected"))
+      
       div(
-        style = "text-align: center; margin-bottom: 15px;",
-        if (!is.na(species_info$photo_url) && species_info$photo_url != "") {
-          img(src = species_info$photo_url)
+        # Header with species names
+        div(
+          style = "margin-bottom: 15px; text-align: center;",
+          h4(species_info$common_name, 
+             style = "color: #2E8B57; margin: 0; font-size: 16px; font-weight: bold;"),
+          p(em(ifelse(is.na(species_info$scientific_name_display) | species_info$scientific_name_display == "", 
+                      species_info$scientific_name, 
+                      species_info$scientific_name_display)), 
+            style = "color: #666; margin: 5px 0; font-size: 13px;")
+        ),
+        
+        # Image
+        div(
+          style = "text-align: center; margin-bottom: 15px;",
+          if (!is.na(species_info$photo_url) && species_info$photo_url != "") {
+            img(src = species_info$photo_url)
+          } else {
+            div(
+              style = "width: 200px; height: 150px; border: 2px dashed #ccc; border-radius: 8px; display: flex; align-items: center; justify-content: center; margin: 0 auto; color: #666;",
+              p("No image available", style = "margin: 0; font-size: 12px;")
+            )
+          }
+        ),
+        
+        # Description
+        if (!is.na(species_info$description) && 
+            !grepl("not available|please visit", species_info$description, ignore.case = TRUE)) {
+          div(
+            class = "species-description",
+            style = "padding: 10px; background: #f8f9fa; border-radius: 5px; border-left: 3px solid #2E8B57;",
+            p(species_info$description, 
+              style = "margin: 0; color: #333; font-size: 14px;"),
+            p(em("Source: All About Birds"), 
+              style = "font-size: 11px; color: #666; margin-top: 8px; margin-bottom: 0;")
+          )
         } else {
           div(
-            style = "width: 200px; height: 150px; border: 2px dashed #ccc; border-radius: 8px; display: flex; align-items: center; justify-content: center; margin: 0 auto; color: #666;",
-            p("No image available", style = "margin: 0; font-size: 12px;")
+            style = "padding: 10px; background: #f8f9fa; border-radius: 5px; color: #666; font-style: italic;",
+            p("Description not available", style = "margin: 0; font-size: 13px;")
           )
         }
-      ),
+      )
       
-      # Description
-      if (!is.na(species_info$description) && 
-          !grepl("not available|please visit", species_info$description, ignore.case = TRUE)) {
+    } else if (input$selection_type == "group") {
+      # Group info
+      req(input$grouping_type, input$selected_group)
+      
+      group_column <- grouping_choices[[input$grouping_type]]$column
+      group_value <- grouping_choices[[input$grouping_type]]$choices[[input$selected_group]]
+      
+      # Get species in this group for this region
+      group_species <- species_ecological_data %>%
+        filter(!!sym(group_column) == group_value) %>%
+        pull(species)
+      
+      species_in_region <- plot_data %>%
+        filter(species %in% group_species, region == input$region) %>%
+        distinct(species) %>%
+        nrow()
+      
+      total_in_group <- length(group_species)
+      
+      # Get list of species names for display
+      species_list <- species_ecological_data %>%
+        filter(!!sym(group_column) == group_value) %>%
+        arrange(species) %>%
+        pull(species) %>%
+        gsub("_", " ", .)
+      
+      div(
+        h4(input$grouping_type, 
+           style = "color: #2E8B57; margin: 0; font-size: 16px; font-weight: bold;"),
+        h5(input$selected_group,
+           style = "color: #666; margin: 5px 0 15px 0; font-size: 14px;"),
+        hr(style = "margin: 10px 0;"),
+        
         div(
-          class = "species-description",
-          style = "padding: 10px; background: #f8f9fa; border-radius: 5px; border-left: 3px solid #2E8B57;",
-          p(species_info$description, 
-            style = "margin: 0; color: #333; font-size: 14px;"),
-          p(em("Source: All About Birds"), 
-            style = "font-size: 11px; color: #666; margin-top: 8px; margin-bottom: 0;")
-        )
-      } else {
+          style = "background: #f8f9fa; padding: 10px; border-radius: 5px; margin-bottom: 10px;",
+          p(style = "margin: 5px 0;",
+            strong("Species in ", input$region, ":"), " ", species_in_region),
+          p(style = "margin: 5px 0;",
+            strong("Total in group:"), " ", total_in_group)
+        ),
+        
+        hr(style = "margin: 10px 0;"),
+        
         div(
-          style = "padding: 10px; background: #f8f9fa; border-radius: 5px; color: #666; font-style: italic;",
-          p("Description not available", style = "margin: 0; font-size: 13px;")
+          style = "max-height: 300px; overflow-y: auto; font-size: 12px;",
+          p(strong("Species in this group:"), style = "margin-bottom: 5px; color: #2E8B57;"),
+          tags$ul(
+            style = "padding-left: 20px; margin: 0;",
+            lapply(species_list, function(sp) {
+              tags$li(sp, style = "margin: 2px 0;")
+            })
+          )
         )
-      }
-    )
+      )
+    }
   })
   
   # Detailed Species Information Panel
