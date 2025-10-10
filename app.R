@@ -17,9 +17,6 @@ library(shinythemes)
 # source some functions
 source("./R/functions.R")
 
-# Calculate trends for all species-region combinations
-trend_data <- calculate_trends(plot_data)
-
 # Load data objects
 bird_species_info <- readRDS("data/bird_species_info.rds")
 bcr_info <- readRDS("data/processed/bcr_info_text_short.rds")
@@ -31,6 +28,9 @@ load("data/processed/model_objects.rda")
 # Load ecological data
 species_ecological_data <- readRDS("data/species_ecological_avonet_pif.rds")
 grouping_choices <- readRDS("data/grouping_choices_avonet_pif.rds")
+
+# Calculate trends for all species-region combinations
+trend_data <- calculate_trends(plot_data)
 
 # Create a list of grouping types for the UI
 grouping_types <- names(grouping_choices)
@@ -541,8 +541,10 @@ server <- function(input, output, session) {
     req(input$region)
     
     if (input$selection_type == "species") {
-      req(input$grouping_type)
-      req(input$selected_group, input$selected_group != "")
+      req(input$select)
+      validate(
+        need(input$select %in% species_list, "Selected species not found")
+      )
       d <- plot_data %>%
         filter(species == input$select, region == input$region)
       
