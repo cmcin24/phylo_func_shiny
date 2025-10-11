@@ -40,16 +40,10 @@ species_list <- unique(mod_data$sp_latin)
 region_list <- unique(mod_data$strata_name)         
 
 # Function to calculate weighted average trends by ecological group
-calculate_group_trends <- function(selected_region, selected_group, group_column) {
-  # Get species in the selected group
-  group_species <- species_ecological_data %>%
-    filter(!!sym(group_column) == selected_group) %>%
-    pull(species)
-  
+calculate_group_trends <- function(selected_region, group_species) {
   # Join trend data with count data
   group_count_data <- plot_data %>%
-    left_join(mod_data, by = c("species"="sp_latin", "region"="strata_name","year")
-    )
+    left_join(mod_data, by = c("species"="sp_latin", "region"="strata_name","year"))
   
   # Get plot data for these species in the selected region
   group_plot_data <- group_count_data %>%
@@ -74,8 +68,6 @@ calculate_group_trends <- function(selected_region, selected_group, group_column
   return(group_trend)
 }
 
-
-
 # Define UI for application
 ui <- fillPage(theme = shinytheme("flatly"), navset_tab(
   nav_panel("Map", 
@@ -89,8 +81,8 @@ ui <- fillPage(theme = shinytheme("flatly"), navset_tab(
             leafletOutput("map"),
             # In your UI, replace the controls absolutePanel with this:
             absolutePanel(id = "controls", class = "panel panel-default",
-                          top = 75, left = 55, width = 270, fixed=TRUE,
-                          draggable = TRUE, height = 550,
+                          top = 75, left = 55, width = 290, fixed=TRUE,
+                          draggable = TRUE, height = 570,
                           
                           # Add radio buttons for selection type (UPDATED)
                           radioButtons("selection_type", "Analysis Type:",
@@ -102,7 +94,8 @@ ui <- fillPage(theme = shinytheme("flatly"), navset_tab(
                           conditionalPanel(
                             condition = "input.selection_type == 'species'",
                             selectInput("select", "Choose species:", 
-                                        choices = species_list)
+                                        choices = species_list,
+                                        selected = character(0))
                           ),
                           
                           # Group selection (show when group selected)
@@ -117,32 +110,19 @@ ui <- fillPage(theme = shinytheme("flatly"), navset_tab(
                             )
                           ),
                           
-                          selectInput("region", "Choose region:", choices = region_list),
-                          plotOutput("plot")
+                          selectInput("region", "Choose region:", 
+                                      choices = region_list,
+                                      selected = character(0)) ,
+                          tags$div(style = "margin-top: 30px;",  # Add spacing above the plot
+                                   plotOutput("plot")
+                          )
             ),
             conditionalPanel(
-              condition = "(input.selection_type == 'species' && input.select != '') || (input.selection_type == 'group' && input.grouping_type != '' && input.selected_group != '')",
+              condition = "input.region != '' && ((input.selection_type == 'species' && input.select != '') || (input.selection_type == 'group' && input.grouping_type != '' && input.selected_group != ''))",
               absolutePanel(id = "species_info_panel", class = "panel panel-default",
                             top = 75, right = 55, width = 340, fixed = TRUE,
                             draggable = TRUE, height = "auto",
                             uiOutput("info_panel")
-              )
-            )
-  ),
-  nav_panel("Species Information", 
-            fluidRow(
-              column(8, style = "padding: 30px;",
-                     uiOutput("species_info_detailed")
-              ),
-              column(4,
-                     uiOutput("species_image")
-              )
-            ),
-            hr(),
-            fluidRow(
-              column(12, style = "padding: 30px;",
-                     h3("All Species Database"),
-                     DTOutput("species_table_full")
               )
             )
   ),
@@ -536,28 +516,62 @@ server <- function(input, output, session) {
                 selected = "")
   })
   
+  # observer to reset selection when grouping type changes
+  observeEvent(input$grouping_type, {
+    updateSelectInput(session, "selected_group", selected = "")
+  }, ignoreInit = TRUE)
+  
+  # Reactive for getting species list in selected group
+  group_species_list <- reactive({
+    req(input$grouping_type, input$selected_group, input$selected_group != "")
+    
+    # Validate that the selected group exists in the current grouping type
+    validate(
+      need(input$selected_group %in% names(grouping_choices[[input$grouping_type]]$choices),
+           "Please select a valid group")
+    )
+    
+    group_column <- grouping_choices[[input$grouping_type]]$column
+    group_value <- grouping_choices[[input$grouping_type]]$choices[[input$selected_group]]
+    
+    species_ecological_data %>%
+      filter(!!sym(group_column) == group_value) %>%
+      pull(species)
+  })
+  
   # Load data for plots - handles both species and group selection
   plotDataInput <- reactive({
-    req(input$region)
+    req(input$region, input$region != "")
     
     if (input$selection_type == "species") {
-      req(input$select)
+      req(input$select, input$select != "")
+      
       validate(
         need(input$select %in% species_list, "Selected species not found")
       )
+      
       d <- plot_data %>%
         filter(species == input$select, region == input$region)
       
+      validate(
+        need(nrow(d) > 0, "No data available for this species in the selected region")
+      )
+      
     } else if (input$selection_type == "group") {
-      req(input$grouping_type, input$selected_group)
+      req(input$grouping_type, input$grouping_type != "")
+      req(input$selected_group, input$selected_group != "")
       
-      # Get the column name for this grouping type
-      group_column <- grouping_choices[[input$grouping_type]]$column
+      group_species <- group_species_list()
       
-      # Get the actual value (remove the species count from the display name)
-      group_value <- grouping_choices[[input$grouping_type]]$choices[[input$selected_group]]
+      validate(
+        need(length(group_species) > 0, "No species found in this group")
+      )
       
-      d <- calculate_group_trends(input$region, group_value, group_column) 
+      d <- calculate_group_trends(input$region, group_species)
+      
+      validate(
+        need(nrow(d) > 0, "No data available for this group in the selected region")
+      )
     }
     
     return(d)
@@ -572,6 +586,7 @@ server <- function(input, output, session) {
   
   # Prepare trend data for the selected species
   speciesTrendMapData <- reactive({
+    req(input$region, input$region != "")
     if (input$selection_type == "species") {
       req(input$select)
       
@@ -586,16 +601,10 @@ server <- function(input, output, session) {
       return(map_data)
       
     } else if (input$selection_type == "group") {
-      req(input$grouping_type, input$selected_group)
+      req(input$grouping_type, input$grouping_type != "")
+      req(input$selected_group, input$selected_group != "")
       
-      # Get the column name and value for this grouping
-      group_column <- grouping_choices[[input$grouping_type]]$column
-      group_value <- grouping_choices[[input$grouping_type]]$choices[[input$selected_group]]
-      
-      # Get species in this group
-      group_species <- species_ecological_data %>%
-        filter(!!sym(group_column) == group_value) %>%
-        pull(species)
+      group_species <- group_species_list()
       
       # Calculate average trends for each region
       group_trends <- trend_data %>%
@@ -638,9 +647,15 @@ server <- function(input, output, session) {
   
   # Update map colors when data changes (for both species and groups)
   observe({
-    if ((input$selection_type == "species" && !is.null(input$select) && input$select != "") ||
-        (input$selection_type == "group" && !is.null(input$grouping_type) && input$grouping_type != "" &&
-         !is.null(input$selected_group) && input$selected_group != "")) {
+      # Only update map when valid selections are made
+      if (input$selection_type == "species") {
+        req(input$select, input$select != "")
+      } else if (input$selection_type == "group") {
+        req(input$grouping_type, input$grouping_type != "")
+        req(input$selected_group, input$selected_group != "")
+      }
+      
+      req(input$region, input$region != "")
       
       data <- speciesTrendMapData()
       
@@ -733,15 +748,45 @@ server <- function(input, output, session) {
           opacity = 0.8,
           layerId = "trend_legend"
         )
-    }
+    
   })
   
   output$plot <- renderPlot({
+    # Check if selections are made
+    if (input$selection_type == "species" && 
+        (is.null(input$select) || input$select == "")) {
+      return(ggplot() + 
+               annotate("text", x = 0.5, y = 0.5, 
+                        label = "Please select a species",
+                        size = 5, color = "gray50") +
+               theme_void())
+    }
+    
+    if (input$selection_type == "group" && 
+        (is.null(input$grouping_type) || input$grouping_type == "" ||
+         is.null(input$selected_group) || input$selected_group == "")) {
+      return(ggplot() + 
+               annotate("text", x = 0.5, y = 0.5, 
+                        label = "Please select a group",
+                        size = 5, color = "gray50") +
+               theme_void())
+    }
+    
+    if (is.null(input$region) || input$region == "") {
+      return(ggplot() + 
+               annotate("text", x = 0.5, y = 0.5, 
+                        label = "Please select a region",
+                        size = 5, color = "gray50") +
+               theme_void())
+    }
+    
     data <- plotDataInput()
     
     if (nrow(data) == 0) {
       return(ggplot() + 
-               annotate("text", x = 0.5, y = 0.5, label = "No data available") +
+               annotate("text", x = 0.5, y = 0.5, 
+                        label = "No data available",
+                        size = 5, color = "gray50") +
                theme_void())
     }
     
@@ -758,10 +803,16 @@ server <- function(input, output, session) {
       labs(title = plot_title,
            x = "Year", y = "Expected Trend") +
       theme_classic() +
-      theme(plot.title = element_text(size = 10))
+      theme(
+        plot.title = element_text(size = 10),
+        plot.margin = margin(5, 10, 5, 5),  # top, right, bottom, left
+        axis.title.x = element_text(size = 9),
+        axis.title.y = element_text(size = 9),
+        axis.text = element_text(size = 8)
+      )
   },
-  width = 200,
-  height = 200
+  width = 230,
+  height = 220
   )
 
   observeEvent(input$map_shape_click, {
@@ -825,15 +876,7 @@ server <- function(input, output, session) {
       
     } else if (input$selection_type == "group") {
       # Group info
-      req(input$grouping_type, input$selected_group)
-      
-      group_column <- grouping_choices[[input$grouping_type]]$column
-      group_value <- grouping_choices[[input$grouping_type]]$choices[[input$selected_group]]
-      
-      # Get species in this group for this region
-      group_species <- species_ecological_data %>%
-        filter(!!sym(group_column) == group_value) %>%
-        pull(species)
+      group_species <- group_species_list()
       
       species_in_region <- plot_data %>%
         filter(species %in% group_species, region == input$region) %>%
@@ -842,9 +885,9 @@ server <- function(input, output, session) {
       
       total_in_group <- length(group_species)
       
-      # Get list of species names for display
+      # Get list of species names for display - need to get full data for names
       species_list <- species_ecological_data %>%
-        filter(!!sym(group_column) == group_value) %>%
+        filter(species %in% group_species) %>%
         arrange(species) %>%
         pull(species) %>%
         gsub("_", " ", .)
@@ -880,113 +923,7 @@ server <- function(input, output, session) {
     }
   })
   
-  # Detailed Species Information Panel
-  output$species_info_detailed <- renderUI({
-    species_info <- current_species_info()
-    
-    if (nrow(species_info) == 0) return(div("No species selected"))
-    
-    div(
-      style = "border: 1px solid #ddd; border-radius: 12px; padding: 25px; background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);",
-      
-      # Header 
-      div(
-        style = "display: flex; align-items: center; margin-bottom: 20px;",
-        div(
-          style = "flex: 1;",
-          h2(species_info$common_name, style = "color: #2E8B57; margin: 0;"),
-          h5(em(species_info$scientific_name_display), style = "color: #666; margin: 5px 0;")
-        )
-      ),
-      
-      # All About Birds Species Description
-      if (!is.na(species_info$description) && 
-          !grepl("not available|please visit", species_info$description, ignore.case = TRUE)) {
-        div(
-          style = "margin-bottom: 20px; padding: 20px; background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);",
-          p(species_info$description, 
-            style = "line-height: 1.7; margin: 0; font-size: 16px; color: #333;"),
-          p(em("Source: All About Birds"), 
-            style = "font-size: 0.9em; color: #666; margin-top: 15px; margin-bottom: 0;")
-        )
-      }
-    )
-  })
-  
-  # Bird image display - centered and larger
-  output$species_image <- renderUI({
-    species_info <- current_species_info()
-    
-    if (nrow(species_info) == 0) return(div("No species selected"))
-    
-    # Display centered and larger image
-    div(
-      style = "padding: 30px; height: 100%;",
-      if (!is.na(species_info$photo_url) && species_info$photo_url != "") {
-        img(src = species_info$photo_url, 
-            style = "max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.2);")
-      } else {
-        div(
-          style = "width: 350px; height: 300px; border: 2px dashed #ccc; border-radius: 12px; display: flex; align-items: center; justify-content: center; margin: 0 auto; color: #666;",
-          p("No image available", style = "margin: 0;")
-        )
-      }
-    )
-  })
-  
-  # Full species table - fixed to properly display data
-  output$species_table_full <- renderDT({
-    # Add error handling and debugging
-    tryCatch({
-      if (nrow(bird_species_info) == 0) {
-        return(datatable(data.frame("Message" = "No data available"), 
-                         options = list(dom = 't'), 
-                         rownames = FALSE))
-      }
-      
-      # Check if required columns exist
-      required_cols <- c("common_name", "scientific_name_display")
-      missing_cols <- setdiff(required_cols, names(bird_species_info))
-      
-      if (length(missing_cols) > 0) {
-        # If scientific_name_display doesn't exist, try scientific_name
-        if ("scientific_name_display" %in% missing_cols && "scientific_name" %in% names(bird_species_info)) {
-          display_data <- bird_species_info %>%
-            select(common_name, scientific_name) %>%
-            rename("Common Name" = common_name,
-                   "Scientific Name" = scientific_name)
-        } else {
-          # Show what columns are available
-          return(datatable(data.frame("Available columns" = names(bird_species_info)), 
-                           options = list(pageLength = 10), 
-                           rownames = FALSE))
-        }
-      } else {
-        display_data <- bird_species_info %>%
-          select(common_name, scientific_name_display) %>%
-          rename("Common Name" = common_name,
-                 "Scientific Name" = scientific_name_display)
-      }
-      
-      datatable(display_data,
-                options = list(
-                  pageLength = 10,
-                  scrollX = TRUE,
-                  autoWidth = TRUE,
-                  columnDefs = list(
-                    list(width = '300px', targets = c(0, 1))
-                  )
-                ),
-                rownames = FALSE)
-    }, error = function(e) {
-      # Return error information
-      datatable(data.frame("Error" = paste("Error loading data:", e$message),
-                           "Data structure" = paste("Columns available:", paste(names(bird_species_info), collapse = ", ")),
-                           "Rows" = nrow(bird_species_info)), 
-                options = list(dom = 't'), 
-                rownames = FALSE)
-    })
-  })
+
   
   # Prepare trend data for the selected species
   regionTrendMapData <- reactive({
@@ -1029,34 +966,6 @@ server <- function(input, output, session) {
         )
       )
   })
-  
-
-  
-  #   # Observer for region selection
-  # observeEvent(input$region2, {
-  #   if (input$region2 != "") {
-  #     # Filter to selected region
-  #     selected_region <- regions[regions$BCR_clean == input$region2, ]
-  #     
-  #     # Get bounding box of selected region
-  #     bbox <- st_bbox(selected_region)
-  #     
-  #     # Extract coordinates as individual values to avoid named vector issues
-  #     xmin <- as.numeric(bbox["xmin"])
-  #     ymin <- as.numeric(bbox["ymin"])
-  #     xmax <- as.numeric(bbox["xmax"])
-  #     ymax <- as.numeric(bbox["ymax"])
-  #     
-  #     # Zoom to selected region
-  #     leafletProxy("region_map") %>%
-  #       fitBounds(lng1 = xmin, 
-  #                 lat1 = ymin,
-  #                 lng2 = xmax, 
-  #                 lat2 = ymax,
-  #                 options = list(padding = c(50, 50)))
-  #   }
-  # })
-  
   
 
   
@@ -1123,11 +1032,16 @@ server <- function(input, output, session) {
     }
   })
   
-  # Limit species selection to 4
+  # Limit species selection to 3
   observeEvent(input$species_selection, {
-    if (length(input$species_selection) > 4) {
+    if (length(input$species_selection) > 3) {
+      showNotification(
+        "Maximum 3 species allowed. Keeping first 3 selections.",
+        type = "warning",
+        duration = 3
+      )
       updateSelectInput(session, "species_selection",
-                        selected = input$species_selection[1:4])
+                        selected = head(input$species_selection, 3))
     }
   })
   
@@ -1258,7 +1172,6 @@ server <- function(input, output, session) {
       }
     )
   })
-  
 }
 
 
