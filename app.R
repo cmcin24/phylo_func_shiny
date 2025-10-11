@@ -35,9 +35,9 @@ trend_data <- calculate_trends(plot_data)
 # Create a list of grouping types for the UI
 grouping_types <- names(grouping_choices)
 
-# List of all species and regions available
+# List of all species and regions available, sorted
 species_list <- unique(mod_data$sp_latin)
-region_list <- unique(mod_data$strata_name)         
+region_list <- sort(unique(mod_data$strata_name))         
 
 # Function to calculate weighted average trends by ecological group
 calculate_group_trends <- function(selected_region, group_species) {
@@ -69,7 +69,7 @@ calculate_group_trends <- function(selected_region, group_species) {
 }
 
 # Define UI for application
-ui <- fillPage(theme = shinytheme("flatly"), navset_tab(
+ui <- fillPage(theme = shinytheme("spacelab"), navset_tab(
   nav_panel("Map", 
             tags$style(type = "text/css", 
                        "#map {height: calc(100vh - 80px) !important;}", 
@@ -81,8 +81,8 @@ ui <- fillPage(theme = shinytheme("flatly"), navset_tab(
             leafletOutput("map"),
             # In your UI, replace the controls absolutePanel with this:
             absolutePanel(id = "controls", class = "panel panel-default",
-                          top = 75, left = 55, width = 290, fixed=TRUE,
-                          draggable = TRUE, height = 570,
+                          top = 75, left = 55, width = 350, fixed=TRUE,
+                          draggable = TRUE, height = "auto",
                           
                           # Add radio buttons for selection type (UPDATED)
                           radioButtons("selection_type", "Analysis Type:",
@@ -94,7 +94,7 @@ ui <- fillPage(theme = shinytheme("flatly"), navset_tab(
                           conditionalPanel(
                             condition = "input.selection_type == 'species'",
                             selectInput("select", "Choose species:", 
-                                        choices = species_list,
+                                        choices = setNames(species_list, gsub("_", " ", species_list)),
                                         selected = character(0))
                           ),
                           
@@ -112,32 +112,32 @@ ui <- fillPage(theme = shinytheme("flatly"), navset_tab(
                           
                           selectInput("region", "Choose region:", 
                                       choices = region_list,
-                                      selected = character(0)) ,
+                                      selected = character(0)),
                           tags$div(style = "margin-top: 30px;",  # Add spacing above the plot
-                                   plotOutput("plot")
+                                   plotOutput("plot", width = "300px", height = "300px")
                           )
             ),
             conditionalPanel(
               condition = "input.region != '' && ((input.selection_type == 'species' && input.select != '') || (input.selection_type == 'group' && input.grouping_type != '' && input.selected_group != ''))",
               absolutePanel(id = "species_info_panel", class = "panel panel-default",
-                            top = 75, right = 55, width = 340, fixed = TRUE,
+                            top = 75, right = 55, width = 350, fixed = TRUE,
                             draggable = TRUE, height = "auto",
                             uiOutput("info_panel")
               )
             )
   ),
-  nav_panel("Species Comparison", 
+  nav_panel("Region Comparison", 
             tags$style(type = "text/css", "#region_map {height: calc(100vh - 80px) !important;}", 
-                       "#controls2 {background-color: white; padding: 0 20px 20px 20px; opacity: 0.65; zoom: 0.9}",
+                       "#controls2 {background-color: white; padding: 20px 20px 20px 20px; opacity: 0.8; zoom: 0.9}",
                        "#controls2:hover {opacity: 0.95; transition-delay: 0}",
                        "#comparison_plots {height: calc(50vh - 40px); overflow-y: auto;}"),
             leafletOutput("region_map"),
             absolutePanel(id = "controls2", class = "panel panel-default",
                           top = 75, left = 55, width = 350, fixed=TRUE,
                           draggable = TRUE, height = "auto",
-                          selectInput("region2", "Choose region:", c("", "BCR2", "BCR4", "BCR5", "BCR6", "BCR8", "BCR9", "BCR10", "BCR11", "BCR12", "BCR13", "BCR14", "BCR15",
-                                                                     "BCR16", "BCR17", "BCR18", "BCR19", "BCR20", "BCR21", "BCR22", "BCR23", "BCR24",
-                                                                     "BCR25", "BCR26", "BCR27", "BCR28", "BCR29", "BCR30", "BCR31", "BCR32", "BCR33", "BCR34", "BCR35", "BCR36", "BCR37")),
+                          selectInput("region2", "Choose region:", 
+                                      choices = region_list,
+                                      selected = character(0)),
                           conditionalPanel(
                             condition = "input.region2 != ''",
                             h4("Select Species (up to 4):"),
@@ -405,7 +405,13 @@ ui <- fillPage(theme = shinytheme("flatly"), navset_tab(
                     tags$summary("Show technical details"),
                     p("Each survey route is 24.5 miles long with 50 stops. 
              At each stop, observers record all birds within 0.25 miles in 3 minutes. 
-             Data are organized by Bird Conservation Regions (BCRs).")
+             Routes are surveyed once per year during peak breeding season, typically starting one-half hour before sunrise."),
+                    p("Data are organized by Bird Conservation Regions (BCRs).
+                    BCRs are ecologically distinct areas with similar bird communities, 
+                      habitats, and resource management issues. They provide a biologically 
+                      meaningful framework for analyzing population trends across 
+                      North America's diverse landscapes.")
+                    
                   )
                 ),
                 
@@ -432,15 +438,33 @@ ui <- fillPage(theme = shinytheme("flatly"), navset_tab(
                    ti(year, species) + ti(year, region, species_phylo) + 
                    ti(year, region, species) + offset(log(n_routes))"
                     ),
-                    p("The model uses fREML estimation, automatic smoothness selection, 
-             and Bayesian simulation for uncertainty.")
+                    h5("Model Components:", style = "color: #2E8B57;"),
+                    tags$ul(
+                      tags$li(strong("Temporal smooth (s(year)):"), " Overall continental trend pattern"),
+                      tags$li(strong("Spatiotemporal effects (ti(year, region)):"), " Region-specific deviations from continental trend"),
+                      tags$li(strong("Phylogenetic effects (ti(year, species_phylo)):"), " Shared trends among related species"),
+                      tags$li(strong("Species-specific effects (ti(year, species)):"), " Individual species deviations"),
+                      tags$li(strong("Higher-order interactions:"), " Species-specific spatiotemporal patterns informed by phylogeny"),
+                      tags$li(strong("Survey effort offset:"), " Accounts for variation in sampling intensity")
+                    ),
+                    
+                    h4("Advanced Features"),
+                    
+                    h5("Phylogenetic Information", style = "color: #2E8B57;"),
+                    p("The model incorporates evolutionary relationships through Markov Random Field (MRF) smooths based on phylogenetic distance. This allows closely related species to share information, improving trend estimates for rare species while respecting evolutionary constraints."),
+                    
+                    h5("Spatial Correlation", style = "color: #2E8B57;"),
+                    p("Spatial relationships among Bird Conservation Regions are modeled using neighborhood-based MRF smooths, ensuring that geographically adjacent regions with similar ecological conditions share information appropriately."),
+                    
                   )
                 ),
                 
                 # INTERPRETING RESULTS
                 div(
                   h2("How to Read the Graphs", class = "section-header"),
-                  p("The solid line shows the estimated population trend. 
+                  p("The solid line shows the estimated population trend, which 
+                represents the model's estimate of what population changes would 
+                have occurred with standardized survey effort across all years.
            The shaded ribbon shows uncertainty — wider ribbons mean less certainty."),
                   
                   div(class = "highlight-box",
@@ -453,10 +477,14 @@ ui <- fillPage(theme = shinytheme("flatly"), navset_tab(
                   
                   tags$details(
                     tags$summary("Show technical details"),
-                    p("Trends are standardized for survey effort. 
-             Uncertainty intervals represent 95% credible intervals 
-             from the model’s posterior distribution.")
-                  )
+                    p("Confidence ribbons around trend lines represent 95% credible intervals from the model's posterior distribution. Wider ribbons indicate greater uncertainty, typically occurring for:"),
+                    tags$ul(
+                      tags$li("Species or regions with limited data"),
+                      tags$li("Time periods with high environmental variability"),
+                      tags$li("Beginning and end of time series (edge effects)"),
+                      tags$li("Species undergoing rapid population changes")
+                    )
+                  ),
                 ),
                 
                 # APPLICATIONS & LIMITATIONS
@@ -484,6 +512,7 @@ ui <- fillPage(theme = shinytheme("flatly"), navset_tab(
                   h2("Data Access", class = "section-header"),
                   p("The raw survey data are freely available from the USGS Patuxent Wildlife Research Center. 
            Our analysis uses a processed subset for more reliable estimates."),
+                  a("Access the data here.", href = "https://www.pwrc.usgs.gov/bbs/RawData/"),
                   
                   tags$details(
                     tags$summary("References"),
@@ -804,15 +833,13 @@ server <- function(input, output, session) {
            x = "Year", y = "Expected Trend") +
       theme_classic() +
       theme(
-        plot.title = element_text(size = 10),
+        plot.title = element_text(size = 12, hjust = 0.5),
         plot.margin = margin(5, 10, 5, 5),  # top, right, bottom, left
         axis.title.x = element_text(size = 9),
         axis.title.y = element_text(size = 9),
         axis.text = element_text(size = 8)
       )
-  },
-  width = 230,
-  height = 220
+  }
   )
 
   observeEvent(input$map_shape_click, {
@@ -1022,7 +1049,7 @@ server <- function(input, output, session) {
       
       # Update the dropdown with available species (scientific names only)
       updateSelectInput(session, "species_selection",
-                        choices = available_species,
+                        choices = setNames(available_species, gsub("_", " ", available_species)),
                         selected = NULL)
     } else {
       # Clear species selection when no region is selected
@@ -1143,22 +1170,18 @@ server <- function(input, output, session) {
     if (nrow(bcr_info) == 0) return(div("No region selected"))
     
     div(
-      # Header with species names
+      # Header
       div(
         style = "padding: 10px; margin-bottom: 15px; text-align: center;",
         h4(bcr_info$bcr_name, 
-           style = "color: #2E8B57; margin: 0; font-size: 16px; font-weight: bold;"),
-        #p(em(ifelse(is.na(species_info$scientific_name_display) | species_info$scientific_name_display == "", 
-        #            species_info$scientific_name, 
-        #            species_info$scientific_name_display)), 
-        #  style = "color: #666; margin: 5px 0; font-size: 13px;")
+           style = "color: #2E8B57; margin: 0; font-size: 16px; font-weight: bold;")
       ),
       
       # Description
       if (!is.na(bcr_info$bcr_description)) {
         div(
           class = "bcr-description",
-          style = "padding: 10px; background: #f8f9fa; border-radius: 5px; border-left: 3px solid #2E8B57;",
+          style = "margin: 15px 15px; padding: 10px; background: #f8f9fa; border-radius: 5px; border-left: 3px solid #2E8B57;",
           p(bcr_info$bcr_description, 
             style = "margin: 0; color: #333; font-size: 14px;"),
           p(em("Source: North American Bird Conservation Initiative"), 
