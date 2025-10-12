@@ -152,7 +152,7 @@ process_pif_data <- function(pif_data) {
       # Population trend score (1=increasing, 5=steep decline)
       pif_trend_score = if (!is.na(trend_col)) .data[[trend_col]] else NA,
       # Conservation concern
-      pif_concern = if (!is.na(concern_col)) .data[[concern_col]] else NA,
+      pif_concern = if (!is.na(concern_col)) .data[[concern_col]] else NA_character_,
       # Create simplified conservation status
       conservation_status = case_when(
         !is.na(pif_concern) & grepl("Red|High", pif_concern, ignore.case = TRUE) ~ "High Concern",
@@ -410,13 +410,7 @@ create_standardized_categories <- function(species_data) {
       lifestyle = as.character(Primary.Lifestyle),
       
       # CONSERVATION STATUS - Use PIF if available, otherwise unknown
-      conservation_category = case_when(
-        !is.na(conservation_status) ~ conservation_status,
-        !is.na(pif_trend_score) & pif_trend_score >= 4 ~ "High Concern - Declining",
-        !is.na(pif_trend_score) & pif_trend_score == 3 ~ "Moderate Concern",
-        !is.na(pif_trend_score) & pif_trend_score <= 2 ~ "Stable/Increasing",
-        TRUE ~ "Unknown"
-      ),
+      conservation_category = conservation_status
       
     )
   
@@ -447,81 +441,132 @@ create_grouping_choices <- function(species_data) {
   
   cat("\n=== Creating Grouping Choices for UI ===\n")
   
-  grouping_options <- list(
+  # Helper function to create choices, returns NULL if empty
+  create_choices <- function(data, column, include_count = TRUE, exclude_values = NULL) {
+    # Build filter condition
+    filtered_data <- data %>%
+      filter(!is.na(!!sym(column)))
     
-    "Taxonomic Family" = list(
+    # Exclude specific values if provided
+    if (!is.null(exclude_values)) {
+      filtered_data <- filtered_data %>%
+        filter(!(!!sym(column) %in% exclude_values))
+    }
+    
+    # Count and create choices
+    choice_data <- filtered_data %>%
+      count(!!sym(column), sort = TRUE)
+    
+    if (nrow(choice_data) == 0) {
+      cat("  ⚠ Warning: No data for", column, "\n")
+      return(NULL)
+    }
+    
+    if (include_count) {
+      choices <- setNames(
+        choice_data[[column]], 
+        paste0(choice_data[[column]], " (", choice_data$n, " species)")
+      )
+    } else {
+      choices <- setNames(choice_data[[column]], choice_data[[column]])
+    }
+    
+    cat("  ✓", column, ":", nrow(choice_data), "categories\n")
+    return(choices)
+  }
+  
+  # Build grouping options, only including non-empty categories
+  grouping_options <- list()
+  
+  # Taxonomic Family
+  family_choices <- create_choices(species_data, "family", include_count = TRUE)
+  if (!is.null(family_choices)) {
+    grouping_options[["Taxonomic Family"]] <- list(
       column = "family",
       display_column = "family",
-      choices = species_data %>%
-        filter(!is.na(family)) %>%
-        count(family, sort = TRUE) %>%
-        {setNames(.$family, paste0(.$family, " (", .$n, " species)"))}
-    ),
-    
-    "Taxonomic Order" = list(
+      choices = family_choices
+    )
+  }
+  
+  # Taxonomic Order
+  order_choices <- create_choices(species_data, "order", include_count = TRUE)
+  if (!is.null(order_choices)) {
+    grouping_options[["Taxonomic Order"]] <- list(
       column = "order",
       display_column = "order",
-      choices = species_data %>%
-        filter(!is.na(order)) %>%
-        count(order, sort = TRUE) %>%
-        {setNames(.$order, paste0(.$order, " (", .$n, " species)"))}
-    ),
-    
-    "Habitat Type" = list(
+      choices = order_choices
+    )
+  }
+  
+  # Habitat Type
+  habitat_choices <- create_choices(species_data, "habitat_category", 
+                                    include_count = TRUE, 
+                                    exclude_values = c("Other"))
+  if (!is.null(habitat_choices)) {
+    grouping_options[["Habitat Type"]] <- list(
       column = "habitat_category",
       display_column = "habitat_category",
-      choices = species_data %>%
-        filter(!is.na(habitat_category) & habitat_category != "Other") %>%
-        count(habitat_category, sort = TRUE) %>%
-        {setNames(.$habitat_category, paste0(.$habitat_category, " (", .$n, " species)"))}
-    ),
-    
-    "Foraging Strategy" = list(
+      choices = habitat_choices
+    )
+  }
+  
+  # Foraging Strategy
+  foraging_choices <- create_choices(species_data, "foraging_strategy", include_count = TRUE)
+  if (!is.null(foraging_choices)) {
+    grouping_options[["Foraging Strategy"]] <- list(
       column = "foraging_strategy",
       display_column = "foraging_strategy",
-      choices = species_data %>%
-        filter(!is.na(foraging_strategy)) %>%
-        count(foraging_strategy, sort = TRUE) %>%
-        {setNames(.$foraging_strategy, paste0(.$foraging_strategy, " (", .$n, " species)"))}
-    ),
-    
-    "Migration Pattern" = list(
+      choices = foraging_choices
+    )
+  }
+  
+  # Migration Pattern
+  migration_choices <- create_choices(species_data, "migration_status", 
+                                      include_count = TRUE, 
+                                      exclude_values = c("Unknown"))
+  if (!is.null(migration_choices)) {
+    grouping_options[["Migration Pattern"]] <- list(
       column = "migration_status",
       display_column = "migration_status",
-      choices = species_data %>%
-        filter(!is.na(migration_status) & migration_status != "Unknown") %>%
-        count(migration_status, sort = TRUE) %>%
-        {setNames(.$migration_status, paste0(.$migration_status, " (", .$n, " species)"))}
-    ),
-    
-    "Body Size" = list(
+      choices = migration_choices
+    )
+  }
+  
+  # Body Size
+  body_size_choices <- create_choices(species_data, "body_size_category", 
+                                      include_count = FALSE, 
+                                      exclude_values = c("Unknown"))
+  if (!is.null(body_size_choices)) {
+    grouping_options[["Body Size"]] <- list(
       column = "body_size_category",
       display_column = "body_size_category",
-      choices = species_data %>%
-        filter(!is.na(body_size_category) & body_size_category != "Unknown") %>%
-        count(body_size_category, sort = TRUE) %>%
-        {setNames(.$body_size_category, .$body_size_category)}
-    ),
-    
-    "Diet Type" = list(
+      choices = body_size_choices
+    )
+  }
+  
+  # Diet Type
+  diet_choices <- create_choices(species_data, "diet_type", include_count = TRUE)
+  if (!is.null(diet_choices)) {
+    grouping_options[["Diet Type"]] <- list(
       column = "diet_type",
       display_column = "diet_type",
-      choices = species_data %>%
-        filter(!is.na(diet_type)) %>%
-        count(diet_type, sort = TRUE) %>%
-        {setNames(.$diet_type, paste0(.$diet_type, " (", .$n, " species)"))}
-    ),
-    
-    "Conservation Status" = list(
+      choices = diet_choices
+    )
+  }
+  
+  # Conservation Status
+  conservation_choices <- create_choices(species_data, "conservation_category", 
+                                         include_count = TRUE, 
+                                         exclude_values = c("Unknown"))
+  if (!is.null(conservation_choices)) {
+    grouping_options[["Conservation Status"]] <- list(
       column = "conservation_category",
       display_column = "conservation_category",
-      choices = species_data %>%
-        filter(!is.na(conservation_category) & conservation_category != "Unknown") %>%
-        count(conservation_category, sort = TRUE) %>%
-        {setNames(.$conservation_category, paste0(.$conservation_category, " (", .$n, " species)"))}
-    ),
-    
-  )
+      choices = conservation_choices
+    )
+  }
+  
+  cat("\n✓ Created", length(grouping_options), "grouping options\n")
   
   return(grouping_options)
 }
