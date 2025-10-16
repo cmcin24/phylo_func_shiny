@@ -145,7 +145,6 @@ process_pif_data <- function(pif_data) {
     return(NULL)
   }
   
-  # Process and standardize PIF data
   pif_processed <- pif_data %>%
     mutate(
       species_pif = gsub(" ", "_", .data[[species_col]]),
@@ -155,6 +154,7 @@ process_pif_data <- function(pif_data) {
       pif_concern = if (!is.na(concern_col)) .data[[concern_col]] else NA_character_,
       # Create simplified conservation status
       conservation_status = case_when(
+        !is.na(pif_concern) & grepl("Common.*Steep.*Decline", pif_concern, ignore.case = TRUE) ~ "Common Bird in Steep Decline",
         !is.na(pif_concern) & grepl("Red|High", pif_concern, ignore.case = TRUE) ~ "High Concern",
         !is.na(pif_concern) & grepl("Yellow|Moderate|Orange", pif_concern, ignore.case = TRUE) ~ "Moderate Concern",
         TRUE ~ "Low Concern"
@@ -189,6 +189,15 @@ process_avonet_ecological_data <- function(species_list, avonet_data, pif_data =
   
   # Function to select and rename key AVONET variables (handles both sheet formats)
   process_avonet_sheet <- function(avonet_df, sheet_number = 1) {
+    # Helper function to safely convert to numeric
+    safe_numeric <- function(x) {
+      # Handle common non-numeric placeholders
+      x <- as.character(x)
+      x <- gsub("^-$|^NA$|^na$|^N/A$|^n/a$|^\\s*$", NA, x, ignore.case = TRUE)
+      # Convert to numeric, suppressing warnings
+      suppressWarnings(as.numeric(x))
+    }
+    
     # Determine column names based on sheet number
     if (sheet_number == 1) {
       species_col <- "Species1"
@@ -227,21 +236,21 @@ process_avonet_ecological_data <- function(species_list, avonet_data, pif_data =
         family = family_raw,
         order = order_raw
       ) %>%
-      # Standardize column types to avoid bind_rows errors
+      # Standardize column types using safe conversion
       mutate(
         Habitat = as.character(Habitat),
-        Habitat.Density = as.numeric(Habitat.Density),
+        Habitat.Density = safe_numeric(Habitat.Density),
         Migration = as.character(Migration),
         Trophic.Level = as.character(Trophic.Level),
         Trophic.Niche = as.character(Trophic.Niche),
         Primary.Lifestyle = as.character(Primary.Lifestyle),
-        Mass = as.numeric(Mass),
-        Wing.Length = as.numeric(Wing.Length),
-        Tail.Length = as.numeric(Tail.Length),
-        Beak.Length = as.numeric(Beak.Length),
-        Range.Size = as.numeric(Range.Size),
-        Centroid.Latitude = as.numeric(Centroid.Latitude),
-        Centroid.Longitude = as.numeric(Centroid.Longitude)
+        Mass = safe_numeric(Mass),
+        Wing.Length = safe_numeric(Wing.Length),
+        Tail.Length = safe_numeric(Tail.Length),
+        Beak.Length = safe_numeric(Beak.Length),
+        Range.Size = safe_numeric(Range.Size),
+        Centroid.Latitude = safe_numeric(Centroid.Latitude),
+        Centroid.Longitude = safe_numeric(Centroid.Longitude)
       )
   }
   
