@@ -23,6 +23,7 @@ regions <- readRDS("data/processed/bcr_simplified.rds")
 plot_data <- readRDS("data/processed/plot_data.rds")
 family_info <- readRDS("data/processed/bird_family_info_manual.rds")
 order_info <- readRDS("data/processed/bird_order_info_manual.rds")
+group_info <- readRDS("data/processed/grouping_info.rds")
 load("data/processed/model_objects.rda")
 
 # Load ecological data
@@ -123,7 +124,7 @@ ui <- fillPage(theme = shinytheme("spacelab"), navset_tab(
                        "#map {height: calc(100vh - 80px) !important;}", 
                        "#controls {background-color: white; padding: 20px 20px 20px 20px; opacity: 0.8; zoom: 0.9}",
                        "#controls:hover {opacity: 0.95; transition-delay: 0}",
-                       "#species_info_panel {background-color: white; padding: 15px; opacity: 0.95; zoom: 0.85; max-height: 600px; overflow-y: auto;}",
+                       "#species_info_panel {background-color: white; padding: 15px; opacity: 0.95; zoom: 0.85; max-height: 900px; overflow-y: auto;}",
                        "#species_info_panel img {max-width: 200px; max-height: 150px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.15);}",
                        "#species_info_panel .species-description {max-height: 300px; overflow-y: auto; font-size: 13px; line-height: 1.4;}"),
             leafletOutput("map"),
@@ -201,7 +202,7 @@ ui <- fillPage(theme = shinytheme("spacelab"), navset_tab(
             conditionalPanel(
               condition = "input.region != '' && ((input.selection_type == 'species' && input.select != '') || (input.selection_type == 'group' && input.grouping_type != '' && input.selected_group != ''))",
               absolutePanel(id = "species_info_panel", class = "panel panel-default",
-                            top = 75, right = 55, width = 350, fixed = TRUE,
+                            top = 75, right = 55, width = 380, fixed = TRUE,
                             draggable = FALSE, height = "auto",
                             uiOutput("info_panel")
               )
@@ -1141,6 +1142,7 @@ server <- function(input, output, session) {
     }
     
     ggplot(data, aes(x = year, y = pred)) +
+      geom_hline(yintercept = 0, linetype = "dashed", color = "gray50", alpha = 0.5, linewidth = 0.5) +
       geom_line(linewidth = 1, alpha = 0.8, color = "darkblue") +
       geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.3, fill = "lightblue") +
       labs(title = plot_title,
@@ -1225,7 +1227,76 @@ server <- function(input, output, session) {
             style = "padding: 10px; background: #f8f9fa; border-radius: 5px; color: #666; font-style: italic;",
             p("Description not available", style = "margin: 0; font-size: 13px;")
           )
-        }
+        },
+        
+        # Ecological characteristics
+        hr(style = "margin: 15px 0 10px 0;"),
+        
+        div(
+          style = "padding: 10px; background: #f9f9f9; border-radius: 5px;",
+          p(strong("Ecological Characteristics"), 
+            style = "color: #2E8B57; margin: 0 0 10px 0; font-size: 14px;"),
+          
+          # Get species ecological data
+          {
+            species_eco <- species_ecological_data %>%
+              filter(species == input$select)
+            
+            if (nrow(species_eco) > 0) {
+              tagList(
+                # Taxonomic info
+                if (!is.na(species_eco$order[1]) && species_eco$order[1] != "") {
+                  p(style = "margin: 3px 0; font-size: 12px;",
+                    strong("Order: "), species_eco$order[1])
+                },
+                if (!is.na(species_eco$family[1]) && species_eco$family[1] != "") {
+                  p(style = "margin: 3px 0; font-size: 12px;",
+                    strong("Family: "), species_eco$family[1])
+                },
+                
+                # Body size
+                if (!is.na(species_eco$body_size_category[1]) && species_eco$body_size_category[1] != "") {
+                  p(style = "margin: 3px 0; font-size: 12px;",
+                    strong("Body Size: "), species_eco$body_size_category[1])
+                },
+                
+                # Habitat
+                if (!is.na(species_eco$habitat_category[1]) && species_eco$habitat_category[1] != "") {
+                  p(style = "margin: 3px 0; font-size: 12px;",
+                    strong("Habitat: "), species_eco$habitat_category[1])
+                },
+                
+                # Diet
+                if (!is.na(species_eco$diet_type[1]) && species_eco$diet_type[1] != "") {
+                  p(style = "margin: 3px 0; font-size: 12px;",
+                    strong("Diet: "), species_eco$diet_type[1])
+                },
+                
+                # Migration
+                if (!is.na(species_eco$migration_status[1]) && species_eco$migration_status[1] != "") {
+                  p(style = "margin: 3px 0; font-size: 12px;",
+                    strong("Migration: "), species_eco$migration_status[1])
+                },
+                
+                # Lifestyle
+                if (!is.na(species_eco$lifestyle[1]) && species_eco$lifestyle[1] != "") {
+                  p(style = "margin: 3px 0; font-size: 12px;",
+                    strong("Foraging Lifestyle: "), species_eco$lifestyle[1])
+                },
+                
+                # Conservation status
+                if (!is.na(species_eco$conservation_category[1]) && species_eco$conservation_category[1] != "") {
+                  p(style = "margin: 3px 0; font-size: 12px;",
+                    strong("Conservation Status: "), species_eco$conservation_category[1])
+                }
+              )
+            } else {
+              p("Ecological data not available", 
+                style = "margin: 0; font-size: 12px; color: #666; font-style: italic;")
+            }
+          }
+        )
+        
       )
       
     } else if (input$selection_type == "group") {
@@ -1280,14 +1351,54 @@ server <- function(input, output, session) {
         c("Select a species..." = "")
       }
       
-      # Check if grouping is by family or order and get taxonomic info
-      taxon_data <- NULL
+      # Check if grouping is by family, order, or ecological category and get info
+      group_description <- NULL
+      
       if (input$grouping_type == "Taxonomic Family") {
         taxon_data <- family_info %>% 
           filter(taxon == input$selected_group, page_exists == TRUE)
+        if (nrow(taxon_data) > 0) {
+          group_description <- list(
+            title = taxon_data$common_name[1],
+            description = taxon_data$description[1],
+            url = taxon_data$url[1]
+          )
+        }
       } else if (input$grouping_type == "Taxonomic Order") {
         taxon_data <- order_info %>% 
           filter(taxon == input$selected_group, page_exists == TRUE)
+        if (nrow(taxon_data) > 0) {
+          group_description <- list(
+            title = taxon_data$common_name[1],
+            description = taxon_data$description[1],
+            url = taxon_data$url[1]
+          )
+        }
+      } else {
+        # Check for ecological grouping descriptions
+        # Map grouping types to their column names in group_info
+        grouping_column_map <- list(
+          "Habitat Type" = "habitat_category",
+          "Diet Type" = "diet_type",
+          "Migration Pattern" = "migration_status",
+          "Conservation Status" = "conservation_category"
+        )
+        
+        if (input$grouping_type %in% names(grouping_column_map)) {
+          column_name <- grouping_column_map[[input$grouping_type]]
+          
+          group_desc <- group_info %>%
+            filter(category_type == column_name, 
+                   category_value == input$selected_group)
+          
+          if (nrow(group_desc) > 0) {
+            group_description <- list(
+              title = NULL,  # No title for ecological groups
+              description = group_desc$description[1],
+              url = NULL  # No URL for ecological groups
+            )
+          }
+        }
       }
       
       div(
@@ -1296,20 +1407,20 @@ server <- function(input, output, session) {
         h5(input$selected_group,
            style = "color: #666; margin: 5px 0 15px 0; font-size: 14px;"),
         
-        # Display taxonomic description if available
-        if(!is.null(taxon_data) && nrow(taxon_data) > 0) {
+        # Display group description if available
+        if(!is.null(group_description)) {
           tagList(
-            if(!is.na(taxon_data$common_name[1]) && taxon_data$common_name[1] != "") {
-              p(strong(taxon_data$common_name[1]), 
+            if(!is.null(group_description$title) && !is.na(group_description$title) && group_description$title != "") {
+              p(strong(group_description$title), 
                 style = "color: #666; font-size: 13px; margin: 5px 0;")
             },
             div(
               style = "padding: 10px; background: #f8f9fa; border-radius: 5px; border-left: 3px solid #2E8B57; margin-bottom: 10px;",
-              p(taxon_data$description[1], 
+              p(group_description$description, 
                 style = "margin: 0; color: #333; font-size: 13px; line-height: 1.4;"),
-              if(!is.na(taxon_data$url[1])) {
+              if(!is.null(group_description$url) && !is.na(group_description$url)) {
                 p(
-                  a("Learn more", href = taxon_data$url[1], target = "_blank", 
+                  a("Learn more", href = group_description$url, target = "_blank", 
                     style = "color: #2E8B57; font-size: 11px;"),
                   style = "margin: 8px 0 0 0;"
                 )
@@ -1577,11 +1688,21 @@ server <- function(input, output, session) {
       gsub("_", " ", data$species)
     }
     
+    # Ensure consistent ordering based on input selection order
+    data$species <- factor(data$species, levels = input$species_selection)
+    data$display_name <- factor(data$display_name, 
+                                levels = unique(data$display_name[order(data$species)]))
+    
+    # Create named color vector based on species order
+    species_colors <- setNames(colors[1:length(input$species_selection)], 
+                               levels(data$display_name))
+    
     ggplot(data, aes(x = year, y = pred, color = display_name, fill = display_name)) +
+      geom_hline(yintercept = 0, linetype = "dashed", color = "gray50", alpha = 0.5, linewidth = 0.5) +
       geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2, color = NA) +
       geom_line(linewidth = 1, alpha = 0.8) +
-      scale_color_manual(values = colors) +
-      scale_fill_manual(values = colors) +
+      scale_color_manual(values = species_colors) +
+      scale_fill_manual(values = species_colors) +
       labs(title = paste("Population Trends in", input$region2),
            x = "Year", 
            y = "Relative Abundance",
@@ -1612,9 +1733,11 @@ server <- function(input, output, session) {
       return(div("No data available for selected species and region"))
     }
     
-    # Create individual plots for each species
-    species_list <- unique(data$species)
+    # Define colors for up to 4 species
     colors <- c("#1f77b4", "#ff7f0e", "#2ca02c", "#d62728")
+    
+    # Use the selection order to maintain consistent colors
+    species_list <- input$species_selection
     
     # Calculate height based on number of species (minimum 400px for 1 species, add 200px for each additional)
     total_height <- max(400, 200 * length(species_list))
@@ -1637,6 +1760,7 @@ server <- function(input, output, session) {
         }
         
         ggplot(species_data, aes(x = year, y = pred)) +
+          geom_hline(yintercept = 0, linetype = "dashed", color = "gray50", alpha = 0.5, linewidth = 0.5) +
           geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.3, fill = colors[i]) +
           geom_line(linewidth = 1, alpha = 0.8, color = colors[i]) +
           labs(title = paste(display_name, "in", input$region2),
