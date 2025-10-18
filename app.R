@@ -39,7 +39,7 @@ species_list <- sort(as.character(unique(mod_data$sp_latin)))
 region_list <- sort(unique(mod_data$strata_name))  
 
 # Shared function to categorize trends consistently
-categorize_trend <- function(slope, threshold_moderate = 0.001, threshold_strong = 0.005) {
+categorize_trend <- function(slope, threshold_moderate = 0.02, threshold_strong = 0.05) {
   case_when(
     is.na(slope) ~ "No Data",
     abs(slope) < threshold_moderate ~ "Stable",
@@ -132,10 +132,22 @@ ui <- fillPage(theme = shinytheme("spacelab"), navset_tab(
                           draggable = TRUE, height = "auto",
                           
                           # Add radio buttons for selection type 
-                          radioButtons("selection_type", "Analysis Type:",
-                                       choices = list("Individual Species" = "species",
-                                                      "Species Group" = "group"),
-                                       selected = "species"),
+                          div(
+                            style = "margin-bottom: 10px;",
+                            div(
+                              style = "display: flex; align-items: center; gap: 5px; margin-bottom: 5px;",
+                              tags$label("Analysis Type:", style = "margin: 0;"),
+                              tags$span(
+                                title = "Individual Species: View trends for a single species across regions. Species Group: View combined trends for groups of species with shared characteristics (e.g., same family, habitat, or migration pattern).",
+                                style = "cursor: help; color: #2E8B57; font-size: 16px;",
+                                "ⓘ"
+                              )
+                            ),
+                            radioButtons("selection_type", label = NULL,
+                                         choices = list("Individual Species" = "species",
+                                                        "Species Group" = "group"),
+                                         selected = "species")
+                          ),
                           # Add radio buttons for name display preference
                           radioButtons("name_format", "Species names:",
                                        choices = list("Common names" = "common",
@@ -164,18 +176,27 @@ ui <- fillPage(theme = shinytheme("spacelab"), navset_tab(
                             )
                           ),
                           
-                          selectInput("region", "Choose region:", 
-                                      choices = region_list,
-                                      selected = character(0)),
+                          div(
+                            style = "display: flex; align-items: center; gap: 5px;",
+                            selectInput("region", "Choose region:", 
+                                        choices = region_list,
+                                        selected = character(0)),
+                            tags$span(
+                              title = "Bird Conservation Regions (BCRs) are ecologically distinct regions in North America with similar bird communities, habitats, and resource management issues.",
+                              style = "cursor: help; color: #2E8B57; font-size: 16px; position: relative; top: 8px;",
+                              "ⓘ"
+                            )
+                          ),
                           tags$div(style = "margin-top: 30px;",  # Add spacing above the plot
                                    plotOutput("plot", width = "300px", height = "300px")
-                          ),
-                          div(
-                            style = "margin-top: 15px; padding: 10px; background: #e3f2fd; border-left: 4px solid #2196F3; border-radius: 4px;",
-                            p(strong("Map Colors:"), style = "margin: 0 0 5px 0; color: #1976D2; font-size: 12px;"),
-                            p("Color intensity shows relative trend strength for this selection. Darker colors indicate regions with stronger trends compared to other regions.", 
-                              style = "margin: 0; font-size: 11px; line-height: 1.4;")
                           )
+                          # ,
+                          # div(
+                          #   style = "margin-top: 15px; padding: 10px; background: #e3f2fd; border-left: 4px solid #2196F3; border-radius: 4px;",
+                          #   p(strong("Map Colors:"), style = "margin: 0 0 5px 0; color: #1976D2; font-size: 12px;"),
+                          #   p("Color intensity shows relative trend strength for this selection. Darker colors indicate regions with stronger trends compared to other regions.", 
+                          #     style = "margin: 0; font-size: 11px; line-height: 1.4;")
+                          # )
             ),
             conditionalPanel(
               condition = "input.region != '' && ((input.selection_type == 'species' && input.select != '') || (input.selection_type == 'group' && input.grouping_type != '' && input.selected_group != ''))",
@@ -195,9 +216,17 @@ ui <- fillPage(theme = shinytheme("spacelab"), navset_tab(
             absolutePanel(id = "controls2", class = "panel panel-default",
                           top = 75, left = 55, width = 350, fixed=TRUE,
                           draggable = TRUE, height = "auto",
-                          selectInput("region2", "Choose region:", 
-                                      choices = region_list,
-                                      selected = character(0)),
+                          div(
+                            style = "display: flex; align-items: center; gap: 5px;",
+                            selectInput("region2", "Choose region:", 
+                                        choices = region_list,
+                                        selected = character(0)),
+                            tags$span(
+                              title = "Bird Conservation Regions (BCRs) are ecologically distinct regions in North America with similar bird communities, habitats, and resource management issues.",
+                              style = "cursor: help; color: #2E8B57; font-size: 16px; position: relative; top: 8px;",
+                              "ⓘ"
+                            )
+                          ),
                           # Add radio buttons for name display preference
                           radioButtons("name_format_region", "Species names:",
                                        choices = list("Common names" = "common",
@@ -369,6 +398,68 @@ ui <- fillPage(theme = shinytheme("spacelab"), navset_tab(
                         tags$li(strong("No Data:"), " Insufficient data for reliable trend estimation")
                       )
                   )
+                ),
+                # Understanding Standardized Counts Section
+                div(
+                  h2("Understanding Standardized Counts", class = "section-header"),
+                  
+                  h4("What are Standardized Counts?"),
+                  p("The models in this application use standardized counts rather than raw bird counts. Standardization is a statistical transformation that makes it easier to compare trends across species with very different baseline abundances."),
+                  
+                  div(class = "highlight-box",
+                      h5("The Standardization Process:", style = "color: #2E8B57; margin-top: 0;"),
+                      p("For each species in each region, we calculate:"),
+                      tags$ol(
+                        tags$li("The mean count across all years"),
+                        tags$li("The standard deviation of counts across all years"),
+                        tags$li("Transform each count using: ", tags$code("(count - mean) / standard deviation"))
+                      ),
+                      p("This creates a scale where:"),
+                      tags$ul(
+                        tags$li(strong("0"), " represents the long-term average count for that species-region combination"),
+                        tags$li(strong("+1"), " means the count is one standard deviation above the average"),
+                        tags$li(strong("-1"), " means the count is one standard deviation below the average")
+                      )
+                  ),
+                  
+                  h4("Why Use Standardized Counts?"),
+                  tags$ul(
+                    tags$li(strong("Fair Comparisons:"), " A common species with 100 birds and a rare species with 5 birds can be compared on the same scale"),
+                    tags$li(strong("Focus on Change:"), " We're interested in relative population changes, not absolute numbers"),
+                    tags$li(strong("Statistical Efficiency:"), " Standardization helps the model learn patterns across species more effectively"),
+                    tags$li(strong("Interpretability:"), " Changes in standard deviations provide a meaningful measure of population change magnitude")
+                  ),
+                  
+                  h4("How to Interpret the Y-Axis"),
+                  div(class = "code-box",
+                      p(style = "margin: 0;", strong("Example Interpretation:")),
+                      p(style = "margin: 5px 0 0 0;", "If a trend line starts at ", tags$code("-0.5"), " and increases to ", tags$code("+1.0"), ":"),
+                      tags$ul(style = "margin: 5px 0;",
+                              tags$li("The population started at 0.5 standard deviations below its long-term average"),
+                              tags$li("It increased to 1.0 standard deviations above its long-term average"),
+                              tags$li("This represents a change of 1.5 standard deviations"),
+                              tags$li("This is a ", strong("substantial increase"), " in relative abundance")
+                      )
+                  ),
+                  
+                  div(class = "highlight-box",
+                      h5("Practical Guidelines:", style = "color: #2E8B57; margin-top: 0;"),
+                      tags$ul(
+                        tags$li("Changes of ", strong("0.5 to 1.0"), " standard deviations represent moderate population shifts"),
+                        tags$li("Changes greater than ", strong("1.0"), " standard deviations represent substantial population changes"),
+                        tags$li("A flat trend near ", strong("0"), " indicates the population is near its long-term average"),
+                        tags$li("The width of confidence ribbons indicates uncertainty in the trend estimate")
+                      )
+                  ),
+                  
+                  h4("Converting Back to Original Counts"),
+                  p("While the standardized scale is useful for comparison, you can mentally convert back to approximate original counts if needed:"),
+                  div(class = "code-box",
+                      tags$pre("Original Count ≈ (Standardized Value × SD) + Mean"),
+                      p(style = "margin: 5px 0 0 0; font-size: 11px;", 
+                        "Where SD and Mean are the species-region specific values calculated during standardization")
+                  ),
+                  p("However, for most conservation applications, the standardized trends provide the most meaningful information about population changes over time.")
                 ),
                 
                 # Applications and Limitations
@@ -548,15 +639,27 @@ ui <- fillPage(theme = shinytheme("spacelab"), navset_tab(
                       tags$li("Time periods with high environmental variability"),
                       tags$li("Beginning and end of time series (edge effects)"),
                       tags$li("Species undergoing rapid population changes")
-                    )
+                    ),
+                    h4("How to Interpret the Y-Axis"),
+                    p("The models in this application use standardized counts rather than raw bird counts. Standardization is a statistical transformation that makes it easier to compare trends across species with very different baseline abundances."),
+                    
+                    div(class = "highlight-box",
+                        h5("The Standardization Process:", style = "color: #2E8B57; margin-top: 0;"),
+                        p("For each species in each region, we calculate:"),
+                        tags$ol(
+                          tags$li("The mean count across all years"),
+                          tags$li("The standard deviation of counts across all years"),
+                          tags$li("Transform each count using: ", tags$code("(count - mean) / standard deviation"))
+                        ),
+                        p("This creates a scale where:"),
+                        tags$ul(
+                          tags$li(strong("0"), " represents the long-term average count for that species-region combination"),
+                          tags$li(strong("+1"), " means the count is one standard deviation above the average"),
+                          tags$li(strong("-1"), " means the count is one standard deviation below the average")
+                        )
+                    ),
+                    
                   ),
-                ),
-                
-                # INTERPRETING RESULTS
-                div(
-                  h2("How to Read the Graphs", class = "section-header"),
-                  p("Color intensity indicates relative slope magnitude for this species"),
-                  
                 ),
                 
                 
@@ -616,13 +719,14 @@ server <- function(input, output, session) {
     #grouping_info <- grouping_choices[[input$grouping_type]]
     
     labels <- names(group_choices)
-    values <- gsub("\\s*\\([^)]*\\)", "", labels)
     
-    
-    # selectInput("selected_group",
-    #             paste("Choose", tolower(input$grouping_type), ":"),
-    #             choices = c("", names(group_choices)),
-    #             selected = "")
+    # For Body Size, keep the full label (including mass range in parentheses)
+    # For other grouping types, remove the species count in parentheses
+    if (input$grouping_type == "Body Size") {
+      values <- labels  # Keep full label like "Small (<20g)"
+    } else {
+      values <- gsub("\\s*\\([^)]*\\)", "", labels)  # Remove (n species)
+    }
     
     selectInput("selected_group",
                 paste("Choose", tolower(input$grouping_type), ":"),
@@ -946,7 +1050,7 @@ server <- function(input, output, session) {
       popup_content <- paste0(
         "<strong>Region:</strong> ", data$BCR_clean, "<br>",
         "<strong>Group:</strong> ", input$grouping_type, " - ", input$selected_group, "<br>",
-        "<strong>Species in group:</strong> ", ifelse(is.na(data$n_species), "0", data$n_species), "<br>",
+        "<strong>Species in region:</strong> ", ifelse(is.na(data$n_species), "0", data$n_species), "<br>",
         "<strong>Trend:</strong> ", ifelse(is.na(data$trend_category), "No Data", data$trend_category), "<br>",
         "<strong>Avg Slope:</strong> ", ifelse(is.na(data$slope), "N/A", round(data$slope, 4)), "<br>"
       )
@@ -1033,20 +1137,20 @@ server <- function(input, output, session) {
       display_name <- get_species_display_name()(input$select)
       plot_title <- paste("Expected Trend for", display_name, "in", input$region)
     } else if (input$selection_type == "group") {
-      plot_title <- paste(input$grouping_type, ":", input$selected_group)
+      plot_title <- paste("Expected Trend for", input$selected_group, "in", input$region)
     }
     
     ggplot(data, aes(x = year, y = pred)) +
       geom_line(linewidth = 1, alpha = 0.8, color = "darkblue") +
       geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.3, fill = "lightblue") +
       labs(title = plot_title,
-           x = "Year", y = "Expected Trend") +
+           x = "Year", y = "Relative Abundance") +
       theme_classic() +
       theme(
         plot.title = element_text(size = 11, hjust = 0.5, face = "bold"),
         plot.margin = margin(10, 10, 5, 5),
-        axis.title.x = element_text(size = 9, margin = margin(t = 5)),
-        axis.title.y = element_text(size = 9, margin = margin(r = 5)),
+        axis.title.x = element_text(size = 10, margin = margin(t = 5)),
+        axis.title.y = element_text(size = 10, margin = margin(r = 5)),
         axis.text = element_text(size = 8)
       )
   }
@@ -1480,7 +1584,7 @@ server <- function(input, output, session) {
       scale_fill_manual(values = colors) +
       labs(title = paste("Population Trends in", input$region2),
            x = "Year", 
-           y = "Expected Trend",
+           y = "Relative Abundance",
            color = "Species",
            fill = "Species") +
       theme_classic() +
@@ -1537,7 +1641,7 @@ server <- function(input, output, session) {
           geom_line(linewidth = 1, alpha = 0.8, color = colors[i]) +
           labs(title = paste(display_name, "in", input$region2),
                x = "Year", 
-               y = "Expected Trend") +
+               y = "Relative Abundance") +
           theme_classic() +
           theme(plot.title = element_text(size = 12, hjust = 0.5))
       }, height = 180)
