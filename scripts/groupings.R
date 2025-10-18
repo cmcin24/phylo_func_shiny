@@ -362,29 +362,18 @@ create_standardized_categories <- function(species_data) {
   species_data <- species_data %>%
     mutate(
       # HABITAT CATEGORIES - Simplified from AVONET Habitat
-      habitat_category = case_when(
-        grepl("Forest", Habitat, ignore.case = TRUE) ~ "Forest",
-        grepl("Woodland", Habitat, ignore.case = TRUE) ~ "Forest/Woodland",
-        grepl("Shrubland|Scrub", Habitat, ignore.case = TRUE) ~ "Scrubland",
-        grepl("Grassland|Savanna", Habitat, ignore.case = TRUE) ~ "Grassland",
-        grepl("Wetland", Habitat, ignore.case = TRUE) ~ "Wetland",
-        grepl("Aquatic|Marine", Habitat, ignore.case = TRUE) ~ "Aquatic",
-        grepl("Desert", Habitat, ignore.case = TRUE) ~ "Desert",
-        grepl("Rocky|Mountain", Habitat, ignore.case = TRUE) ~ "Rocky areas",
-        grepl("Artificial|Urban", Habitat, ignore.case = TRUE) ~ "Urban",
-        TRUE ~ "Other"
-      ),
+      habitat_category = as.character(Habitat),
       
-      # FORAGING STRATEGY - From AVONET Trophic.Niche
-      foraging_strategy = case_when(
-        grepl("Aerial", Trophic.Niche, ignore.case = TRUE) ~ "Aerial",
-        grepl("Sallying", Trophic.Niche, ignore.case = TRUE) ~ "Sallying",
-        grepl("Bark|Tree|Trunk", Trophic.Niche, ignore.case = TRUE) ~ "Bark gleaning",
-        grepl("Foliage", Trophic.Niche, ignore.case = TRUE) ~ "Foliage gleaning",
-        grepl("Ground", Trophic.Niche, ignore.case = TRUE) ~ "Ground foraging",
-        grepl("Aquatic", Trophic.Niche, ignore.case = TRUE) ~ "Aquatic foraging",
-        TRUE ~ as.character(Trophic.Niche)
-      ),
+      # # FORAGING STRATEGY - From AVONET Trophic.Niche
+      # foraging_strategy = case_when(
+      #   grepl("Aerial", Trophic.Niche, ignore.case = TRUE) ~ "Aerial",
+      #   grepl("Sallying", Trophic.Niche, ignore.case = TRUE) ~ "Sallying",
+      #   grepl("Bark|Tree|Trunk", Trophic.Niche, ignore.case = TRUE) ~ "Bark gleaning",
+      #   grepl("Foliage", Trophic.Niche, ignore.case = TRUE) ~ "Foliage gleaning",
+      #   grepl("Ground", Trophic.Niche, ignore.case = TRUE) ~ "Ground foraging",
+      #   grepl("Aquatic", Trophic.Niche, ignore.case = TRUE) ~ "Aquatic foraging",
+      #   TRUE ~ as.character(Trophic.Niche)
+      # ),
       
       # DIET TYPE - From AVONET Trophic.Level
       diet_type = case_when(
@@ -427,9 +416,9 @@ create_standardized_categories <- function(species_data) {
   cat("\nHabitat categories:\n")
   print(table(species_data$habitat_category) %>% sort(decreasing = TRUE))
   
-  cat("\nForaging strategies:\n")
-  print(table(species_data$foraging_strategy) %>% sort(decreasing = TRUE))
-  
+  # cat("\nForaging strategies:\n")
+  # print(table(species_data$foraging_strategy) %>% sort(decreasing = TRUE))
+  # 
   cat("\nMigration status:\n")
   print(table(species_data$migration_status) %>% sort(decreasing = TRUE))
   
@@ -519,15 +508,15 @@ create_grouping_choices <- function(species_data) {
     )
   }
   
-  # Foraging Strategy
-  foraging_choices <- create_choices(species_data, "foraging_strategy", include_count = TRUE)
-  if (!is.null(foraging_choices)) {
-    grouping_options[["Foraging Strategy"]] <- list(
-      column = "foraging_strategy",
-      display_column = "foraging_strategy",
-      choices = foraging_choices
-    )
-  }
+  # # Foraging Strategy
+  # foraging_choices <- create_choices(species_data, "foraging_strategy", include_count = TRUE)
+  # if (!is.null(foraging_choices)) {
+  #   grouping_options[["Foraging Strategy"]] <- list(
+  #     column = "foraging_strategy",
+  #     display_column = "foraging_strategy",
+  #     choices = foraging_choices
+  #   )
+  # }
   
   # Migration Pattern
   migration_choices <- create_choices(species_data, "migration_status", 
@@ -685,7 +674,7 @@ main <- function() {
   cat("\nData includes:\n")
   cat("- Taxonomic: Family, Order\n")
   cat("- Habitat:", length(unique(species_data$habitat_category[!is.na(species_data$habitat_category)])), "categories\n")
-  cat("- Foraging:", length(unique(species_data$foraging_strategy[!is.na(species_data$foraging_strategy)])), "strategies\n")
+  # cat("- Foraging:", length(unique(species_data$foraging_strategy[!is.na(species_data$foraging_strategy)])), "strategies\n")
   cat("- Migration:", length(unique(species_data$migration_status[!is.na(species_data$migration_status)])), "patterns\n")
   cat("- Body size:", length(unique(species_data$body_size_category[!is.na(species_data$body_size_category)])), "categories\n")
   cat("- Diet:", length(unique(species_data$diet_type[!is.na(species_data$diet_type)])), "types\n")
@@ -698,7 +687,8 @@ main <- function() {
   cat("\nSample of comprehensive data:\n")
   if (!is.null(pif_data)) {
     print(head(species_data %>% 
-                 select(species, family, habitat_category, foraging_strategy, 
+                 select(species, family, habitat_category, 
+                        # foraging_strategy, 
                         migration_status, conservation_category), 10))
   } else {
     print(head(species_data %>% 
