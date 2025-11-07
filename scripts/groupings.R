@@ -90,7 +90,6 @@ load_pif_data <- function() {
   # Check for PIF data file
   pif_files <- c(
     "data/raw/pif_species_assessment.xlsx",
-    "data/raw/PIF_Species_Assessment.xlsx",
     "data/raw/ACAD_US_Canada.xlsx"
   )
   
