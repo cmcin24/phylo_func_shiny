@@ -1,10 +1,5 @@
 # Setup Instructions
 
-<<<<<<< HEAD
-Test commit from RStudio
-test2 
-test3 
-test4
 =======
 ## First Time Setup
 
