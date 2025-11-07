@@ -47,9 +47,10 @@ bcr_clean <- bcr_raw %>%
   # Sort by BCR number
   arrange(BCR_number)
 
+bcr_simple <- st_simplify(bcr_clean, dTolerance = 1000)  # Adjust tolerance
 
 # Save the cleaned data
-saveRDS(bcr_clean, "./data/processed/bcr_clean.rds")
+saveRDS(bcr_simple, "./data/processed/bcr_simplified.rds")
 
     
     
