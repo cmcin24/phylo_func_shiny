@@ -1,0 +1,10 @@
+name: phylo_func_shiny
+title:
+username: hirundo
+account: hirundo
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 15794555
+bundleId: 11743639
+url: https://hirundo.shinyapps.io/phylo_func_shiny/
+version: 1
