@@ -19,7 +19,6 @@ library(shinycssloaders)
 bird_species_info <- readRDS("data/bird_species_info.rds")
 bcr_info <- readRDS("data/processed/bcr_info_text_short.rds")
 bcr_images <- read.csv("bcr_image.csv")
-family_data <- readRDS("data/bird_family_data.rds")
 regions <- readRDS("data/processed/bcr_simplified.rds")
 plot_data <- readRDS("data/processed/plot_data.rds")
 family_info <- readRDS("data/processed/bird_family_info_manual.rds")
@@ -31,98 +30,19 @@ load("data/processed/model_objects.rda")
 species_ecological_data <- readRDS("data/species_ecological_avonet_pif.rds")
 grouping_choices <- readRDS("data/grouping_choices_avonet_pif.rds")
 
-# Load pre-calculated data (fast!)
+# Load pre-calculated trends
 trend_data <- readRDS("data/processed/trend_data_precalc.rds")
 group_trends_precalc <- readRDS("data/processed/group_trends_precalc.rds")
 group_trend_stats <- readRDS("data/processed/group_trend_stats.rds")
 plot_data <- readRDS("data/processed/plot_data_with_counts.rds")
 
-
 # Create a list of grouping types for the UI
 grouping_types <- names(grouping_choices)
 
 # List of all species and regions available, sorted
-
 species_list <- sort(as.character(unique(mod_data$sp_latin)))
 region_list <- levels(mod_data$strata_name)
 
-# Shared function to categorise trends consistently
-categorize_trend <- function(slope, threshold_moderate = 0.02, threshold_strong = 0.05) {
-  case_when(
-    is.na(slope) ~ "No Data",
-    abs(slope) < threshold_moderate ~ "Stable",
-    slope >= threshold_strong ~ "Strong Increase",
-    slope >= threshold_moderate ~ "Moderate Increase",
-    slope <= -threshold_strong ~ "Strong Decrease",
-    slope <= -threshold_moderate ~ "Moderate Decrease",
-    TRUE ~ "Stable"
-  )
-}
-
-calculate_linear_trends <- function(plot_data) {
-  trends <- plot_data %>%
-    group_by(species, region) %>%
-    do({
-      if (nrow(.) > 3) {
-        model <- lm(pred ~ year, data = .)
-        slope <- coef(model)[2]
-        p_value <- summary(model)$coefficients[2, 4]
-        r_squared <- summary(model)$r.squared
-        
-        data.frame(
-          slope = slope,
-          p_value = p_value,
-          r_squared = r_squared,
-          trend_category = categorize_trend(slope),
-          trend_strength = abs(slope)
-        )
-      } else {
-        data.frame(
-          slope = NA,
-          p_value = NA,
-          r_squared = NA,
-          trend_category = "Insufficient Data",
-          trend_strength = NA
-        )
-      }
-    }) %>%
-    ungroup()
-  
-  return(trends)
-}
-
-# Calculate trends for all species-region combinations
-trend_data <- calculate_linear_trends(plot_data)
-
-
-# Function to calculate weighted average trends by ecological group
-calculate_group_trends <- function(selected_region, group_species) {
-  # Join trend data with count data
-  group_count_data <- plot_data %>%
-    left_join(mod_data, by = c("species"="sp_latin", "region"="strata_name","year"))
-  
-  # Get plot data for these species in the selected region
-  group_plot_data <- group_count_data %>%
-    filter(species %in% group_species, region == selected_region)
-  
-  if (nrow(group_plot_data) == 0) {
-    return(data.frame())
-  }
-  
-  # Calculate weighted average by year
-  group_trend <- group_plot_data %>%
-    group_by(year) %>%
-    summarise(
-      pred  = weighted.mean(pred,  w = count, na.rm = TRUE),
-      lower = weighted.mean(lower, w = count, na.rm = TRUE),
-      upper = weighted.mean(upper, w = count, na.rm = TRUE),
-      n_species   = n_distinct(species),
-      total_count = sum(count, na.rm = TRUE),
-      .groups = 'drop'
-    )
-  
-  return(group_trend)
-}
 
 # Define UI for application
 ui <- fillPage(theme = shinytheme("spacelab"), navset_tab(
@@ -383,7 +303,7 @@ ui <- fillPage(theme = shinytheme("spacelab"), navset_tab(
                     p(class = "steps", 
                       "→ Map tab → 'Species Group' → 'Conservation Status: High Concern' 
         → Map shows regional patterns")
-                ),
+                )
               
             )
   ),
@@ -427,9 +347,9 @@ ui <- fillPage(theme = shinytheme("spacelab"), navset_tab(
                           # Species selection (show when individual species selected)
                           conditionalPanel(
                             condition = "input.selection_type == 'species'",
-                            selectInput("select", "Choose species (start typing to search):", 
-                                        choices = character(0),
-                                        selected = character(0))
+                            selectizeInput("select", "Choose species (start typing to search):", 
+                                        choices = NULL,
+                                        options = list(placeholder = "Type or scroll to select a species..."))
                           ),
                         
                           
@@ -460,8 +380,11 @@ ui <- fillPage(theme = shinytheme("spacelab"), navset_tab(
                             style = "margin-top: 30px;",
                             
                             # Plot
-                            plotOutput("plot", width = "300px", height = "300px") %>%
-                              withSpinner(color = "#2E8B57", type = 4, size = 0.8),
+                            div(
+                              style = "width: 300px; height: 300px;",
+                              plotOutput("plot", width = "100%", height = "100%") %>%
+                                withSpinner(color = "#2E8B57", type = 4, size = 0.8)
+                            ),
                             
                             # Info box below plot
                             div(
@@ -476,13 +399,7 @@ ui <- fillPage(theme = shinytheme("spacelab"), navset_tab(
                               )
                             )
                           )
-                          # ,
-                          # div(
-                          #   style = "margin-top: 15px; padding: 10px; background: #e3f2fd; border-left: 4px solid #2196F3; border-radius: 4px;",
-                          #   p(strong("Map Colors:"), style = "margin: 0 0 5px 0; color: #1976D2; font-size: 12px;"),
-                          #   p("Color intensity shows relative trend strength for this selection. Darker colors indicate regions with stronger trends compared to other regions.", 
-                          #     style = "margin: 0; font-size: 11px; line-height: 1.4;")
-                          # )
+   
             ),
             conditionalPanel(
               condition = "((input.selection_type == 'species' && input.select != '') || (input.selection_type == 'group' && input.grouping_type != '' && input.selected_group != ''))",
@@ -531,16 +448,23 @@ ui <- fillPage(theme = shinytheme("spacelab"), navset_tab(
                             condition = "input.region2 != '' && input.species_selection.length > 0",
                             checkboxInput("combined_plot", "Display as combined plot", value = TRUE),
                             hr(),
+                            
                             # Combined plot
                             conditionalPanel(
                               condition = "input.combined_plot",
-                              plotOutput("combined_trends_plot", height = "350px") %>%
-                                withSpinner(color = "#2E8B57", type = 4, size = 0.8)
+                              div(
+                                style = "width: 310px; height: 310px;",
+                                plotOutput("combined_trends_plot", width = "100%", height = "100%") %>%
+                                  withSpinner(color = "#2E8B57", type = 4, size = 0.8)
+                              )
                             ),
                             # Separate plots
                             conditionalPanel(
                               condition = "!input.combined_plot",
-                              uiOutput("separate_plots")
+                              div(
+                                style = "width: 310px;",
+                                uiOutput("separate_plots")
+                              )
                             )
                           )
             ),
@@ -554,249 +478,6 @@ ui <- fillPage(theme = shinytheme("spacelab"), navset_tab(
               )
             )
   ), 
-  
-  # nav_panel("Methods & Data",
-  #           tags$style(type = "text/css", 
-  #                      ".methods-content {padding: 30px; max-width: 1200px; margin: 0 auto; height: calc(100vh - 120px); overflow-y: auto;}",
-  #                      ".section-header {color: #2E8B57; border-bottom: 2px solid #2E8B57; padding-bottom: 10px; margin-bottom: 20px;}",
-  #                      ".highlight-box {background: #f8f9fa; border-left: 4px solid #2E8B57; padding: 15px; margin: 15px 0; border-radius: 5px;}",
-  #                      ".code-box {background: #f4f4f4; border: 1px solid #ddd; padding: 15px; border-radius: 5px; font-family: 'Courier New', monospace; font-size: 12px; overflow-x: auto;}"),
-  #           div(class = "methods-content",
-  #               h1("Modeling Methodology & Dataset Information", style = "text-align: center; color: #2E8B57; margin-bottom: 40px;"),
-  #               
-  #               # BBS Dataset Section
-  #               div(
-  #                 h2("North American Breeding Bird Survey (BBS)", class = "section-header"),
-  #                 
-  #                 div(class = "highlight-box",
-  #                     h4("Dataset Overview", style = "color: #2E8B57; margin-top: 0;"),
-  #                     p("The North American Breeding Bird Survey (BBS) is a cooperative effort between the U.S. Geological Survey and Environment and Climate Change Canada to monitor the status and trends of North American bird populations. Since 1966, the BBS has provided the scientific foundation for hundreds of conservation decisions and policies."),
-  #                     
-  #                     h5("Key Features:", style = "color: #2E8B57;"),
-  #                     tags$ul(
-  #                       tags$li("Long-term dataset spanning over 50 years (1966-present)"),
-  #                       tags$li("Continental scale coverage across North America"),
-  #                       tags$li("Standardized methodology ensuring data consistency"),
-  #                       tags$li("Annual surveys conducted during peak breeding season (May-July)"),
-  #                       tags$li("Over 4,000 survey routes across the continent")
-  #                     )
-  #                 ),
-  #                 
-  #                 h4("Survey Methodology"),
-  #                 p("Each BBS route is 24.5 miles long with 50 stops spaced 0.5 miles apart. At each stop, trained observers conduct a 3-minute point count, recording all birds seen or heard within a 0.25-mile radius. Routes are surveyed once per year during peak breeding season, typically starting one-half hour before sunrise."),
-  #                 
-  #                 h4("Bird Conservation Regions (BCRs)"),
-  #                 p("The analysis is organized by Bird Conservation Regions, which are ecologically distinct areas with similar bird communities, habitats, and resource management issues. BCRs provide a biologically meaningful framework for analyzing population trends across North America's diverse landscapes."),
-  #                 
-  #                 div(class = "highlight-box",
-  #                     h5("Data Processing:", style = "color: #2E8B57; margin-top: 0;"),
-  #                     tags$ul(
-  #                       tags$li("Routes with adequate sampling effort and data quality"),
-  #                       tags$li("Species-region combinations with sufficient data for trend estimation"),
-  #                       tags$li("Standardization for observer effects and survey conditions"),
-  #                       tags$li("Integration across multiple spatial and temporal scales")
-  #                     )
-  #                 )
-  #               ),
-  #               
-  #               # GAM Modeling Section
-  #               div(
-  #                 h2("Generalized Additive Model (GAM) Approach", class = "section-header"),
-  #                 
-  #                 div(class = "highlight-box",
-  #                     h4("Why GAMs for Bird Population Trends?", style = "color: #2E8B57; margin-top: 0;"),
-  #                     p("Generalized Additive Models are particularly well-suited for analyzing bird population trends because they:"),
-  #                     tags$ul(
-  #                       tags$li("Handle non-linear temporal patterns without assuming specific functional forms"),
-  #                       tags$li("Incorporate spatial correlation across regions"),
-  #                       tags$li("Account for phylogenetic relationships among species"),
-  #                       tags$li("Provide uncertainty quantification for trend estimates"),
-  #                       tags$li("Scale efficiently to large, complex datasets")
-  #                     )
-  #                 ),
-  #                 
-  #                 h4("Model Architecture"),
-  #                 p("Our modeling approach uses a hierarchical GAM framework that decomposes population trends into multiple components:"),
-  #                 
-  #                 div(class = "code-box",
-  #                     "count ~ s(year) + ti(year, region) + ti(year, species_phylo) + \n",
-  #                     "        ti(year, species) + ti(year, region, species_phylo) + \n",
-  #                     "        ti(year, region, species) + offset(log(n_routes))"
-  #                 ),
-  #                 
-  #                 h5("Model Components:", style = "color: #2E8B57;"),
-  #                 tags$ul(
-  #                   tags$li(strong("Temporal smooth (s(year)):"), " Overall continental trend pattern"),
-  #                   tags$li(strong("Spatiotemporal effects (ti(year, region)):"), " Region-specific deviations from continental trend"),
-  #                   tags$li(strong("Phylogenetic effects (ti(year, species_phylo)):"), " Shared trends among related species"),
-  #                   tags$li(strong("Species-specific effects (ti(year, species)):"), " Individual species deviations"),
-  #                   tags$li(strong("Higher-order interactions:"), " Species-specific spatiotemporal patterns informed by phylogeny"),
-  #                   tags$li(strong("Survey effort offset:"), " Accounts for variation in sampling intensity")
-  #                 ),
-  #                 
-  #                 h4("Advanced Features"),
-  #                 
-  #                 h5("Phylogenetic Information", style = "color: #2E8B57;"),
-  #                 p("The model incorporates evolutionary relationships through Markov Random Field (MRF) smooths based on phylogenetic distance. This allows closely related species to share information, improving trend estimates for rare species while respecting evolutionary constraints."),
-  #                 
-  #                 h5("Spatial Correlation", style = "color: #2E8B57;"),
-  #                 p("Spatial relationships among Bird Conservation Regions are modeled using neighborhood-based MRF smooths, ensuring that geographically adjacent regions with similar ecological conditions share information appropriately."),
-  #                 
-  #                 div(class = "highlight-box",
-  #                     h5("Model Fitting Details:", style = "color: #2E8B57; margin-top: 0;"),
-  #                     tags$ul(
-  #                       tags$li("Fast Restricted Maximum Likelihood (fREML) estimation"),
-  #                       tags$li("Automatic smoothness selection via generalized cross-validation"),
-  #                       tags$li("Bayesian posterior simulation for uncertainty quantification"),
-  #                       tags$li("10% holdout validation set for model assessment"),
-  #                       tags$li("Computational efficiency through discrete fitting methods")
-  #                     )
-  #                 )
-  #               ),
-  #               
-  #               # Trend Interpretation Section
-  #               div(
-  #                 h2("Trend Interpretation", class = "section-header"),
-  #                 
-  #                 h4("Expected vs. Observed Trends"),
-  #                 p("The visualizations show 'expected trends' which represent the model's estimate of what population changes would have occurred with standardized survey effort across all years. This approach:"),
-  #                 tags$ul(
-  #                   tags$li("Controls for changes in the number of survey routes over time"),
-  #                   tags$li("Provides more interpretable relative population changes"),
-  #                   tags$li("Enables fair comparison across regions and species"),
-  #                   tags$li("Reduces confounding between survey effort and true population changes")
-  #                 ),
-  #                 
-  #                 h4("Uncertainty Visualization"),
-  #                 p("Confidence ribbons around trend lines represent 95% credible intervals from the model's posterior distribution. Wider ribbons indicate greater uncertainty, typically occurring for:"),
-  #                 tags$ul(
-  #                   tags$li("Species or regions with limited data"),
-  #                   tags$li("Time periods with high environmental variability"),
-  #                   tags$li("Beginning and end of time series (edge effects)"),
-  #                   tags$li("Species undergoing rapid population changes")
-  #                 ),
-  #                 
-  #                 div(class = "highlight-box",
-  #                     h5("Trend Categories:", style = "color: #2E8B57; margin-top: 0;"),
-  #                     tags$ul(
-  #                       tags$li(strong("Strong Increase:"), " Substantial upward trend with high confidence"),
-  #                       tags$li(strong("Moderate Increase:"), " Positive trend with moderate confidence"),  
-  #                       tags$li(strong("Stable:"), " No significant directional change"),
-  #                       tags$li(strong("Moderate Decrease:"), " Negative trend with moderate confidence"),
-  #                       tags$li(strong("Strong Decrease:"), " Substantial downward trend with high confidence"),
-  #                       tags$li(strong("No Data:"), " Insufficient data for reliable trend estimation")
-  #                     )
-  #                 )
-  #               ),
-  #               # Understanding Standardized Counts Section
-  #               div(
-  #                 h2("Understanding Standardized Counts", class = "section-header"),
-  #                 
-  #                 h4("What are Standardized Counts?"),
-  #                 p("The models in this application use standardized counts rather than raw bird counts. Standardization is a statistical transformation that makes it easier to compare trends across species with very different baseline abundances."),
-  #                 
-  #                 div(class = "highlight-box",
-  #                     h5("The Standardization Process:", style = "color: #2E8B57; margin-top: 0;"),
-  #                     p("For each species in each region, we calculate:"),
-  #                     tags$ol(
-  #                       tags$li("The mean count across all years"),
-  #                       tags$li("The standard deviation of counts across all years"),
-  #                       tags$li("Transform each count using: ", tags$code("(count - mean) / standard deviation"))
-  #                     ),
-  #                     p("This creates a scale where:"),
-  #                     tags$ul(
-  #                       tags$li(strong("0"), " represents the long-term average count for that species-region combination"),
-  #                       tags$li(strong("+1"), " means the count is one standard deviation above the average"),
-  #                       tags$li(strong("-1"), " means the count is one standard deviation below the average")
-  #                     )
-  #                 ),
-  #                 
-  #                 h4("Why Use Standardized Counts?"),
-  #                 tags$ul(
-  #                   tags$li(strong("Fair Comparisons:"), " A common species with 100 birds and a rare species with 5 birds can be compared on the same scale"),
-  #                   tags$li(strong("Focus on Change:"), " We're interested in relative population changes, not absolute numbers"),
-  #                   tags$li(strong("Statistical Efficiency:"), " Standardization helps the model learn patterns across species more effectively"),
-  #                   tags$li(strong("Interpretability:"), " Changes in standard deviations provide a meaningful measure of population change magnitude")
-  #                 ),
-  #                 
-  #                 h4("How to Interpret the Y-Axis"),
-  #                 div(class = "code-box",
-  #                     p(style = "margin: 0;", strong("Example Interpretation:")),
-  #                     p(style = "margin: 5px 0 0 0;", "If a trend line starts at ", tags$code("-0.5"), " and increases to ", tags$code("+1.0"), ":"),
-  #                     tags$ul(style = "margin: 5px 0;",
-  #                             tags$li("The population started at 0.5 standard deviations below its long-term average"),
-  #                             tags$li("It increased to 1.0 standard deviations above its long-term average"),
-  #                             tags$li("This represents a change of 1.5 standard deviations"),
-  #                             tags$li("This is a ", strong("substantial increase"), " in relative abundance")
-  #                     )
-  #                 ),
-  #                 
-  #                 div(class = "highlight-box",
-  #                     h5("Practical Guidelines:", style = "color: #2E8B57; margin-top: 0;"),
-  #                     tags$ul(
-  #                       tags$li("Changes of ", strong("0.5 to 1.0"), " standard deviations represent moderate population shifts"),
-  #                       tags$li("Changes greater than ", strong("1.0"), " standard deviations represent substantial population changes"),
-  #                       tags$li("A flat trend near ", strong("0"), " indicates the population is near its long-term average"),
-  #                       tags$li("The width of confidence ribbons indicates uncertainty in the trend estimate")
-  #                     )
-  #                 ),
-  #                 
-  #                 h4("Converting Back to Original Counts"),
-  #                 p("While the standardized scale is useful for comparison, you can mentally convert back to approximate original counts if needed:"),
-  #                 div(class = "code-box",
-  #                     tags$pre("Original Count ≈ (Standardized Value × SD) + Mean"),
-  #                     p(style = "margin: 5px 0 0 0; font-size: 11px;", 
-  #                       "Where SD and Mean are the species-region specific values calculated during standardization")
-  #                 ),
-  #                 p("However, for most conservation applications, the standardized trends provide the most meaningful information about population changes over time.")
-  #               ),
-  #               
-  #               # Applications and Limitations
-  #               div(
-  #                 h2("Applications & Limitations", class = "section-header"),
-  #                 
-  #                 h4("Conservation Applications"),
-  #                 tags$ul(
-  #                   tags$li("Identifying species and regions of conservation concern"),
-  #                   tags$li("Tracking progress toward conservation targets"),
-  #                   tags$li("Informing habitat management decisions"),
-  #                   tags$li("Supporting policy development and resource allocation"),
-  #                   tags$li("Detecting early warning signals of population declines")
-  #                 ),
-  #                 
-  #                 h4("Model Limitations"),
-  #                 div(class = "highlight-box",
-  #                     tags$ul(style = "margin: 0;",
-  #                             tags$li("Trends reflect breeding populations along roadsides, not total populations"),
-  #                             tags$li("Species detectability may vary across regions and time"),
-  #                             tags$li("Limited coverage in remote areas and certain habitat types"),
-  #                             tags$li("Potential biases from observer effects and route accessibility"),
-  #                             tags$li("Causal interpretation requires additional ecological context")
-  #                     )
-  #                 )
-  #               ),
-  #               
-  #               # References
-  #               div(
-  #                 h2("References & Data Sources", class = "section-header"),
-  #                 
-  #                 h4("Primary Data Source"),
-  #                 p("Pardieck, K.L., D.J. Ziolkowski Jr., M. Lutmerding, V.I. Aponte, and M.-A.R. Hudson. 2020. North American Breeding Bird Survey Dataset 1966-2019, version 2019.0. U.S. Geological Survey, Patuxent Wildlife Research Center."),
-  #                 
-  #                 h4("Methodological References"),
-  #                 tags$ul(
-  #                   tags$li("Wood, S.N. (2017). Generalized Additive Models: An Introduction with R, Second Edition. CRC Press."),
-  #                   tags$li("Sauer, J.R. et al. (2017). The first 50 years of the North American Breeding Bird Survey. The Condor 119(3): 576-593."),
-  #                   tags$li("Bird Conservation Regions: North American Bird Conservation Initiative. (2022). The State of Canada's Birds."),
-  #                   tags$li("Phylogenetic analysis methods based on contemporary phylogenetic reconstruction techniques.")
-  #                 ),
-  #                 
-  #                 div(class = "highlight-box",
-  #                     p(strong("Data Availability:"), " Raw BBS data are freely available through the USGS Patuxent Wildlife Research Center. This analysis represents a subset of the full BBS dataset, processed and analyzed using advanced statistical methods to provide robust trend estimates.", style = "margin: 0;")
-  #                 )
-  #               )
-  #           )
-  # ),
   
   nav_panel("About",
               tags$style(type = "text/css", 
@@ -1107,207 +788,13 @@ ui <- fillPage(theme = shinytheme("spacelab"), navset_tab(
                         tags$li("Wood, S.N. (2017). Generalized Additive Models: An Introduction with R, Second Edition. CRC Press."),
                         tags$li("Sauer, J. R., Niven, D. K., Hines, J. E., Ziolkowski Jr., D. J., Pardieck, K. L., Fallon, J. E., & 
                                 Link, W. A. (2017). The North American Breeding Bird Survey: Results and analysis, 1966–2015 (Version 2.07.2017). 
-                                U.S. Geological Survey, Patuxent Wildlife Research Center."),
+                                U.S. Geological Survey, Patuxent Wildlife Research Center.")
                       )
                     )
                   )
               )
   )
-  
-  # nav_panel("Info",
-  #           tags$style(type = "text/css", 
-  #                      ".methods-content {padding: 30px; max-width: 900px; margin: 0 auto; height: calc(100vh - 120px); overflow-y: auto;}
-  #             .section-header {color: #2E8B57; border-bottom: 2px solid #2E8B57; padding-bottom: 10px; margin-bottom: 20px;}
-  #             .highlight-box {background: #f8f9fa; border-left: 4px solid #2E8B57; padding: 15px; margin: 15px 0; border-radius: 5px;}
-  #             details summary {
-  #               background: #e9f5ef;
-  #               border: 1px solid #2E8B57;
-  #               border-radius: 5px;
-  #               padding: 10px;
-  #               margin: 10px 0;
-  #               cursor: pointer;
-  #               font-weight: bold;
-  #               color: #2E8B57;
-  #               list-style: none;
-  #             }
-  #             details[open] summary {
-  #               background: #d3efe0;
-  #             }
-  #             details summary::before {
-  #               content: '▶ ';
-  #               font-size: 0.9em;
-  #             }
-  #             details[open] summary::before {
-  #               content: '▼ ';
-  #             }"),
-  #           
-  #           div(class = "methods-content",
-  #               
-  #               h1("How We Studied Bird Populations", 
-  #                  style = "text-align: center; color: #2E8B57; margin-bottom: 40px;"),
-  #               
-  #               # DATA SECTION
-  #               div(
-  #                 h2("About the Data", class = "section-header"),
-  #                 p("The data come from the North American Breeding Bird Survey, 
-  #          a project running since 1966. Volunteers cover fixed routes each year, 
-  #          stopping to count all birds they see or hear. 
-  #          This creates one of the largest and longest-running bird monitoring programs in the world."),
-  #                 
-  #                 div(class = "highlight-box",
-  #                     tags$ul(
-  #                       tags$li("Over 50 years of data"),
-  #                       tags$li("Coverage across North America"),
-  #                       tags$li("Same method every year for consistency")
-  #                     )
-  #                 ),
-  #                 
-  #                 tags$details(
-  #                   tags$summary("Show technical details"),
-  #                   p("Each survey route is 24.5 miles long with 50 stops. 
-  #            At each stop, observers record all birds within 0.25 miles in 3 minutes. 
-  #            Routes are surveyed once per year during peak breeding season, typically starting one-half hour before sunrise."),
-  #                   p("Data are organized by Bird Conservation Regions (BCRs).
-  #                   BCRs are ecologically distinct areas with similar bird communities, 
-  #                     habitats, and resource management issues. They provide a biologically 
-  #                     meaningful framework for analyzing population trends across 
-  #                     North America's diverse landscapes.")
-  #                   
-  #                 )
-  #               ),
-  #               
-  #               # MODELLING SECTION
-  #               div(
-  #                 h2("How We Estimate Trends", class = "section-header"),
-  #                 p("Bird populations don’t always change in a straight line. 
-  #          We use a flexible model that captures curved trends over time 
-  #          and accounts for differences between regions and related species."),
-  #                 
-  #                 div(class = "highlight-box",
-  #                     tags$ul(
-  #                       tags$li("Detects non-linear (wiggly) trends"),
-  #                       tags$li("Accounts for regional differences"),
-  #                       tags$li("Shares information across related species")
-  #                     )
-  #                 ),
-  #                 
-  #                 tags$details(
-  #                   tags$summary("Show technical details"),
-  #                   p("We use a hierarchical Generalized Additive Model (GAM):"),
-  #                   tags$pre(
-  #                     "count ~ s(year) + ti(year, region) + ti(year, species_phylo) + 
-  #                  ti(year, species) + ti(year, region, species_phylo) + 
-  #                  ti(year, region, species) + offset(log(n_routes))"
-  #                   ),
-  #                   h5("Model Components:", style = "color: #2E8B57;"),
-  #                   tags$ul(
-  #                     tags$li(strong("Temporal smooth (s(year)):"), " Overall continental trend pattern"),
-  #                     tags$li(strong("Spatiotemporal effects (ti(year, region)):"), " Region-specific deviations from continental trend"),
-  #                     tags$li(strong("Phylogenetic effects (ti(year, species_phylo)):"), " Shared trends among related species"),
-  #                     tags$li(strong("Species-specific effects (ti(year, species)):"), " Individual species deviations"),
-  #                     tags$li(strong("Higher-order interactions:"), " Species-specific spatiotemporal patterns informed by phylogeny"),
-  #                     tags$li(strong("Survey effort offset:"), " Accounts for variation in sampling intensity")
-  #                   ),
-  #                   
-  #                   h4("Advanced Features"),
-  #                   
-  #                   h5("Phylogenetic Information", style = "color: #2E8B57;"),
-  #                   p("The model incorporates evolutionary relationships through Markov Random Field (MRF) smooths based on phylogenetic distance. This allows closely related species to share information, improving trend estimates for rare species while respecting evolutionary constraints."),
-  #                   
-  #                   h5("Spatial Correlation", style = "color: #2E8B57;"),
-  #                   p("Spatial relationships among Bird Conservation Regions are modeled using neighborhood-based MRF smooths, ensuring that geographically adjacent regions with similar ecological conditions share information appropriately."),
-  #                   
-  #                 )
-  #               ),
-  #               
-  #               # INTERPRETING RESULTS
-  #               div(
-  #                 h2("How to Read the Graphs", class = "section-header"),
-  #                 p("The solid line shows the estimated population trend, which 
-  #               represents the model's estimate of what population changes would 
-  #               have occurred with standardized survey effort across all years.
-  #          The shaded ribbon shows uncertainty — wider ribbons mean less certainty."),
-  #                 
-  #                 div(class = "highlight-box",
-  #                     tags$ul(
-  #                       tags$li("⬆️ Strong Increase – populations rising confidently"),
-  #                       tags$li("➖ Stable – no significant change"),
-  #                       tags$li("⬇️ Strong Decrease – clear population decline")
-  #                     )
-  #                 ),
-  #                 
-  #                 tags$details(
-  #                   tags$summary("Show technical details"),
-  #                   p("Confidence ribbons around trend lines represent 95% credible intervals from the model's posterior distribution. Wider ribbons indicate greater uncertainty, typically occurring for:"),
-  #                   tags$ul(
-  #                     tags$li("Species or regions with limited data"),
-  #                     tags$li("Time periods with high environmental variability"),
-  #                     tags$li("Beginning and end of time series (edge effects)"),
-  #                     tags$li("Species undergoing rapid population changes")
-  #                   ),
-  #                   h4("How to Interpret the Y-Axis"),
-  #                   p("The models in this application use standardized counts rather than raw bird counts. Standardization is a statistical transformation that makes it easier to compare trends across species with very different baseline abundances."),
-  #                   
-  #                   div(class = "highlight-box",
-  #                       h5("The Standardization Process:", style = "color: #2E8B57; margin-top: 0;"),
-  #                       p("For each species in each region, we calculate:"),
-  #                       tags$ol(
-  #                         tags$li("The mean count across all years"),
-  #                         tags$li("The standard deviation of counts across all years"),
-  #                         tags$li("Transform each count using: ", tags$code("(count - mean) / standard deviation"))
-  #                       ),
-  #                       p("This creates a scale where:"),
-  #                       tags$ul(
-  #                         tags$li(strong("0"), " represents the long-term average count for that species-region combination"),
-  #                         tags$li(strong("+1"), " means the count is one standard deviation above the average"),
-  #                         tags$li(strong("-1"), " means the count is one standard deviation below the average")
-  #                       )
-  #                   ),
-  #                   
-  #                 ),
-  #               ),
-  #               
-  #               
-  #               
-  #               # APPLICATIONS & LIMITATIONS
-  #               div(
-  #                 h2("Applications & Limitations", class = "section-header"),
-  #                 h4("Why This Matters"),
-  #                 tags$ul(
-  #                   tags$li("Identify species and regions needing conservation"),
-  #                   tags$li("Track progress toward conservation goals"),
-  #                   tags$li("Provide early warning of population declines")
-  #                 ),
-  #                 
-  #                 h4("Limitations"),
-  #                 div(class = "highlight-box",
-  #                     tags$ul(
-  #                       tags$li("Counts reflect birds along roadsides, not all habitats"),
-  #                       tags$li("Some species are harder to detect than others"),
-  #                       tags$li("Remote areas have limited coverage")
-  #                     )
-  #                 )
-  #               ),
-  #               
-  #               # REFERENCES
-  #               div(
-  #                 h2("Data Access", class = "section-header"),
-  #                 p("The raw survey data are freely available from the USGS Patuxent Wildlife Research Center. 
-  #          Our analysis uses a processed subset for more reliable estimates."),
-  #                 a("Access the data here.", href = "https://www.pwrc.usgs.gov/bbs/RawData/"),
-  #                 
-  #                 tags$details(
-  #                   tags$summary("References"),
-  #                   tags$ul(
-  #                     tags$li("Pardieck, K.L. et al. (2020). North American Breeding Bird Survey Dataset 1966-2019."),
-  #                     tags$li("Wood, S.N. (2017). Generalized Additive Models: An Introduction with R."),
-  #                     tags$li("Sauer, J.R. et al. (2017). The first 50 years of the North American Breeding Bird Survey.")
-  #                   )
-  #                 )
-  #               )
-  #           )
-  # )
- ), 
+ )
 
 )
 
@@ -1391,33 +878,33 @@ server <- function(input, output, session) {
   # Observer to update species dropdown when name preference changes
   observeEvent(input$name_format, {
     current_selection <- input$select
+    new_selected <- if (!is.null(current_selection) && current_selection != "") current_selection else ""
     
-    # Only update if there's actually a selection to preserve
-    if (!is.null(current_selection) && current_selection != "") {
-      updateSelectInput(
-        session, 
-        "select",
-        choices = formatted_species_choices(),
-        selected = current_selection  # This preserves the scientific name value
-      )
-    } else {
-      # If nothing selected, just update choices
-      updateSelectInput(
-        session, 
-        "select",
-        choices = formatted_species_choices()
-      )
-    }
+    updateSelectizeInput(
+      session, 
+      "select",
+      choices = formatted_species_choices(),
+      selected = new_selected
+    )
   }, ignoreInit = TRUE)
   
-  # Replace the observe block with observeEvent that only runs once:
+  # Only runs once:
   observeEvent(formatted_species_choices(), {
-    updateSelectInput(
+    updateSelectizeInput(
       session,
       "select",
-      choices = formatted_species_choices()
+      choices = formatted_species_choices(),
+      selected = ""
     )
   }, once = TRUE, ignoreNULL = FALSE)
+  
+  # observeEvent(formatted_species_choices(), {
+  #   updateSelectInput(
+  #     session,
+  #     "select",
+  #     choices = formatted_species_choices()
+  #   )
+  # }, once = TRUE, ignoreNULL = FALSE)
   
   # Helper function to get display name for a species
   get_species_display_name <- reactive({
@@ -1544,43 +1031,7 @@ server <- function(input, output, session) {
     # Calculate symmetric range around zero for relative scaling
     max_abs_slope <- max(abs(available_data$slope), na.rm = TRUE)
     
-    # # Create custom color mapping function with relative intensity
-    # get_color <- function(slope, trend_category) {
-    #   # Handle missing data
-    #   if (is.na(slope) || is.na(trend_category)) return("#F4F4F4")
-    #   
-    #   # Stable trends are always grey
-    #   if (trend_category == "Stable") return("#D3D3D3")
-    #   
-    #   # No data cases
-    #   if (trend_category %in% c("No Data", "Insufficient Data")) return("#F4F4F4")
-    #   
-    #   # Calculate relative intensity for this species/group
-    #   if (max_abs_slope > 0) {
-    #     slope_intensity <- abs(slope) / max_abs_slope
-    #     
-    #     # Increasing trends - green scale
-    #     if (slope > 0) {
-    #       if (slope_intensity <= 0.5) {
-    #         return("#b6d7a8")  # Light green for moderate increase
-    #       } else {
-    #         return("#006600")  # Dark green for strong increase
-    #       }
-    #     } 
-    #     # Decreasing trends - red scale
-    #     else {
-    #       if (slope_intensity <= 0.5) {
-    #         return("#ea9999")  # Light red for moderate decrease
-    #       } else {
-    #         return("#CC0000")  # Dark red for strong decrease
-    #       }
-    #     }
-    #   }
-    #   
-    #   return("#F4F4F4")  # Default fallback
-    # }
-    
-    # Create custom color mapping function with ABSOLUTE intensity
+    # Create custom color mapping function with absolute intensity
     get_color <- function(slope, trend_category) {
       # Handle missing data
       if (is.na(slope) || is.na(trend_category)) return("#F4F4F4")
@@ -1724,12 +1175,12 @@ server <- function(input, output, session) {
       theme_classic() +
       theme(
         plot.title = element_text(size = 12, hjust = 0.5, face = "bold"),
-        plot.margin = margin(10, 10, 5, 5),
+        plot.margin = margin(10, 10, 10, 10),
         axis.title.x = element_text(size = 11, margin = margin(t = 5)),
         axis.title.y = element_text(size = 11, margin = margin(r = 5)),
         axis.text = element_text(size = 8)
       )
-  }
+  }, width = 300, height = 300
   )
 
   observeEvent(input$map_shape_click, {
@@ -1878,12 +1329,7 @@ server <- function(input, output, session) {
       if (is.null(group_species) || length(group_species) == 0) {
         return(div("No group selected or no species in group"))
       }
-      
-      # species_in_region <- plot_data %>%
-      #   filter(species %in% group_species, region == input$region) %>%
-      #   distinct(species) %>%
-      #   nrow()
-      
+
       total_in_group <- length(group_species)
       
       # Get list of species names for display - need to get full data for names
@@ -1999,14 +1445,6 @@ server <- function(input, output, session) {
         
         hr(style = "margin: 10px 0;"),
         
-        # div(
-        #   style = "background: #f8f9fa; padding: 10px; border-radius: 5px; margin-bottom: 10px;",
-        #   p(style = "margin: 5px 0;",
-        #     strong("Species in ", input$region, ":"), " ", species_in_region),
-        #   p(style = "margin: 5px 0;",
-        #     strong("Total in group:"), " ", total_in_group)
-        # ),
-        
         hr(style = "margin: 10px 0;"),
         
         div(
@@ -2039,9 +1477,8 @@ server <- function(input, output, session) {
     req(input$switch_to_species != "")
     
     updateRadioButtons(session, "selection_type", selected = "species")
-    updateSelectInput(session, "select", selected = input$switch_to_species)
+    updateSelectizeInput(session, "select", selected = input$switch_to_species)  # <- change here
     
-    # Reset the dropdown for next use
     updateSelectInput(session, "switch_to_species", selected = "")
   }, ignoreInit = TRUE)
   
@@ -2087,8 +1524,6 @@ server <- function(input, output, session) {
         )
       )
   })
-  
-
   
   # Observer for drop-down region selection
   observeEvent(input$region2, {
@@ -2209,14 +1644,14 @@ server <- function(input, output, session) {
   
   # Limit species selection to 3
   observeEvent(input$species_selection, {
-    if (length(input$species_selection) > 4) {
+    if (length(input$species_selection) > 3) {
       showNotification(
         "Maximum 3 species allowed. Keeping first 3 selections.",
         type = "warning",
         duration = 3
       )
       updateSelectInput(session, "species_selection",
-                        selected = head(input$species_selection, 4))
+                        selected = head(input$species_selection, 3))
     }
   })
   
@@ -2244,7 +1679,7 @@ server <- function(input, output, session) {
     }
     
     # Define colors for up to 4 species
-    colors <- c("#1f77b4", "#ff7f0e", "#2ca02c", "#d62728")
+    colors <- c("#1f77b4", "#ff7f0e", "#2ca02c")
     
     # Create display names for legend (use region-specific radio buttons)
     data <- data %>%
@@ -2278,20 +1713,22 @@ server <- function(input, output, session) {
            fill = "Species") +
       theme_classic() +
       theme(
-        plot.title = element_text(size = 14, hjust = 0.5),
-        plot.margin = margin(10, 10, 10, 10),  # Add margins around plot
+        plot.title = element_text(size = 12, hjust = 0.5),
+        plot.margin = margin(10, 10, 10, 10),
+        axis.title = element_text(size = 10),
+        axis.text = element_text(size = 9),
         legend.position = "bottom",
-        legend.title = element_text(size = 12),
-        legend.text = element_text(size = 11),
-        legend.key.size = unit(0.7, "lines"),  # Make legend keys smaller
-        legend.box.margin = margin(0, 0, 0, 0),  # Remove extra margin
-        legend.margin = margin(5, 0, 0, 0)  # Small margin above legend
+        legend.title = element_text(size = 10),
+        legend.text = element_text(size = 10),
+        legend.key.size = unit(0.6, "lines"),
+        legend.box.margin = margin(0, 0, 0, 0),
+        legend.margin = margin(3, 0, 0, 0)
       ) +
       guides(
-        color = guide_legend(override.aes = list(alpha = 1), nrow = 3, byrow = TRUE),  # Allow 2 rows if needed
+        color = guide_legend(override.aes = list(alpha = 1), nrow = 3, byrow = TRUE),
         fill = "none"
       )
-  })
+  }, width = 310, height = 310)
   
   # Separate plots
   output$separate_plots <- renderUI({
@@ -2301,8 +1738,8 @@ server <- function(input, output, session) {
       return(div("No data available for selected species and region"))
     }
     
-    # Define colors for up to 4 species
-    colors <- c("#1f77b4", "#ff7f0e", "#2ca02c", "#d62728")
+    # Define colors for up to 3 species
+    colors <- c("#1f77b4", "#ff7f0e", "#2ca02c")
     
     # Use the selection order to maintain consistent colors
     species_list <- input$species_selection
@@ -2335,11 +1772,18 @@ server <- function(input, output, session) {
                x = "Year", 
                y = "Relative Abundance") +
           theme_classic() +
-          theme(plot.title = element_text(size = 12, hjust = 0.5))
-      }, height = 180)
+          theme(
+            plot.title = element_text(size = 10, hjust = 0.5),
+            plot.margin = margin(5, 5, 5, 5),
+            axis.title = element_text(size = 9),
+            axis.text = element_text(size = 8)
+          )
+      }, width = 310, height = 170)
       
-      
-      plotOutput(output_id, height = "180px")
+      div(
+        style = "margin-bottom: 8px;",
+        plotOutput(output_id, width = "310px", height = "170px")
+      )
     })
     
     do.call(tagList, plot_outputs)
@@ -2352,39 +1796,6 @@ server <- function(input, output, session) {
     bcr_info %>%
       filter(bcr_number == number_only)
   })
-  
-  # # Display region info 
-  # output$bcr_info_map_panel <- renderUI({
-  #   bcr_info <- current_region_info()
-  #   
-  #   if (nrow(bcr_info) == 0) return(div("No region selected"))
-  #   
-  #   div(
-  #     # Header
-  #     div(
-  #       style = "padding: 10px; margin-bottom: 15px; text-align: center;",
-  #       h4(bcr_info$bcr_name, 
-  #          style = "color: #2E8B57; margin: 0; font-size: 16px; font-weight: bold;")
-  #     ),
-  #     
-  #     # Description
-  #     if (!is.na(bcr_info$bcr_description)) {
-  #       div(
-  #         class = "bcr-description",
-  #         style = "margin: 15px 15px; padding: 10px; background: #f8f9fa; border-radius: 5px; border-left: 3px solid #2E8B57;",
-  #         p(bcr_info$bcr_description, 
-  #           style = "margin: 0; color: #333; font-size: 14px;"),
-  #         p(em("Source: North American Bird Conservation Initiative"), 
-  #           style = "font-size: 11px; color: #666; margin-top: 8px; margin-bottom: 0;")
-  #       )
-  #     } else {
-  #       div(
-  #         style = "padding: 10px; background: #f8f9fa; border-radius: 5px; color: #666; font-style: italic;",
-  #         p("Description not available", style = "margin: 0; font-size: 13px;")
-  #       )
-  #     }
-  #   )
-  # })
   
   # Display region info with image
   output$bcr_info_map_panel <- renderUI({
@@ -2421,7 +1832,6 @@ server <- function(input, output, session) {
         )
       },
       
-
       # Description
       if (!is.na(bcr_info_row$bcr_description)) {
         div(
