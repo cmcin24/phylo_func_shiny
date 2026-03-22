@@ -4,7 +4,7 @@
 
 ## Overview
 
-This application visualises and models long-term population trends for bird species across North America, using data from the **North American Breeding Bird Survey (BBS)** — one of the largest and longest-running wildlife monitoring programs in the world, with over 50 years of standardised observations across 4,000+ routes.
+This application visualises and models long-term population trends for bird species across North America, using data from the North American Breeding Bird Survey (BBS) — one of the largest and longest-running wildlife monitoring programs in the world, with over 50 years of standardised observations across 4,000+ routes.
 
 The app is designed to be informative for researchers and conservationists while remaining approachable for a general audience. Users can:
 
@@ -12,7 +12,7 @@ The app is designed to be informative for researchers and conservationists while
 - **Compare trends across Bird Conservation Regions** — ecologically distinct areas with similar bird communities and habitats
 - **Visualise uncertainty** through confidence ribbons derived from Bayesian posterior simulation
 
-Population trends are estimated using a **hierarchical Generalised Additive Model (GAM)** that captures non-linear population changes over time. The model incorporates phylogenetic smoothing — meaning closely related species share statistical information, improving trend estimates for rarer species — and spatial smoothing across neighbouring regions. Model outputs were generated using University of Queensland high-performance computing infrastructure.
+Population trends are estimated using a hierarchical Generalised Additive Model (GAM) that captures non-linear population changes over time. The model incorporates phylogenetic smoothing — meaning closely related species share statistical information, improving trend estimates for rarer species — and spatial smoothing across neighbouring regions. Model outputs were generated using University of Queensland high-performance computing infrastructure.
 
 ## Setup Instructions
 
